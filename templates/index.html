@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Option Chain Dashboard</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="dashboard-container">
+        <header class="glass-header">
+            <div class="logo">Nexus Options</div>
+            <div class="controls">
+                <select id="symbolSelect" class="styled-select">
+                    <option value="NIFTY">NIFTY 50</option>
+                    <option value="BANKNIFTY">BANK NIFTY</option>
+                </select>
+                <div class="spot-info">
+                    <span id="spotLabel">SPOT PRICE</span>
+                    <span id="spotPrice" class="highlight">Loading...</span>
+                </div>
+                <div class="status-badge live">Live</div>
+                <a href="/logout" class="btn-logout">Logout</a>
+            </div>
+        </header>
+
+        <main class="table-container glass-panel">
+            <div class="table-header-info">
+                <h2>Option Chain (Nearest Expiry: <span id="expiryDate">...</span>)</h2>
+                <div class="refresh-info">Auto refreshes every 5s</div>
+            </div>
+            
+            <div class="table-wrapper">
+                <table class="option-chain">
+                    <thead>
+                        <tr>
+                            <th colspan="3" class="ce-header">CALLS</th>
+                            <th>STRIKE</th>
+                            <th colspan="3" class="pe-header">PUTS</th>
+                        </tr>
+                        <tr>
+                            <th>Volume</th>
+                            <th>OI</th>
+                            <th>LTP</th>
+                            <th class="mid-col">Price</th>
+                            <th>LTP</th>
+                            <th>OI</th>
+                            <th>Volume</th>
+                        </tr>
+                    </thead>
+                    <tbody id="chainBody">
+                        <!-- Content goes here dynamically -->
+                        <tr>
+                            <td colspan="7" style="text-align: center; padding: 2rem;">Loading live market data...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </main>
+    </div>
+    
+    <script src="/static/js/script.js"></script>
+</body>
+</html>

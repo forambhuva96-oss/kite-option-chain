@@ -1,0 +1,7 @@
+kiteconnect
+python-dotenv
+flask
+requests
+pandas
+gunicorn
+Flask-Session
