@@ -3,63 +3,65 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Option Chain Dashboard</title>
+    <title>NIFTY Option Chain · Nexus Options</title>
+    <meta name="description" content="Real-time NIFTY & Bank Nifty option chain powered by Zerodha Kite API">
     <link rel="stylesheet" href="/static/css/style.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="dashboard-container">
-        <header class="glass-header">
-            <div class="logo">Nexus Options</div>
-            <div class="controls">
-                <select id="symbolSelect" class="styled-select">
-                    <option value="NIFTY">NIFTY 50</option>
-                    <option value="BANKNIFTY">BANK NIFTY</option>
-                </select>
-                <div class="spot-info">
-                    <span id="spotLabel">SPOT PRICE</span>
-                    <span id="spotPrice" class="highlight">Loading...</span>
-                </div>
-                <div class="status-badge live">Live</div>
-                <a href="/logout" class="btn-logout">Logout</a>
-            </div>
-        </header>
+<div class="dashboard">
 
-        <main class="table-container glass-panel">
-            <div class="table-header-info">
-                <h2>Option Chain (Nearest Expiry: <span id="expiryDate">...</span>)</h2>
-                <div class="refresh-info">Auto refreshes every 5s</div>
+    <!-- Header -->
+    <header class="dash-header glass-panel">
+        <span class="logo-text">⬡ Nexus Options</span>
+        <div class="header-right">
+            <select id="symbolSelect" class="symbol-select">
+                <option value="NIFTY">NIFTY 50</option>
+                <option value="BANKNIFTY">BANK NIFTY</option>
+            </select>
+            <div class="spot-block">
+                <div class="spot-label">Spot Price</div>
+                <div class="spot-value" id="spotPrice">—</div>
             </div>
-            
-            <div class="table-wrapper">
-                <table class="option-chain">
-                    <thead>
-                        <tr>
-                            <th colspan="3" class="ce-header">CALLS</th>
-                            <th>STRIKE</th>
-                            <th colspan="3" class="pe-header">PUTS</th>
-                        </tr>
-                        <tr>
-                            <th>Volume</th>
-                            <th>OI</th>
-                            <th>LTP</th>
-                            <th class="mid-col">Price</th>
-                            <th>LTP</th>
-                            <th>OI</th>
-                            <th>Volume</th>
-                        </tr>
-                    </thead>
-                    <tbody id="chainBody">
-                        <!-- Content goes here dynamically -->
-                        <tr>
-                            <td colspan="7" style="text-align: center; padding: 2rem;">Loading live market data...</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </main>
-    </div>
-    
-    <script src="/static/js/script.js"></script>
+            <div class="live-dot" id="liveBadge">Live</div>
+            <a href="/logout" class="btn-logout">Logout</a>
+        </div>
+    </header>
+
+    <!-- Table -->
+    <section class="table-card glass-panel">
+        <div class="table-meta">
+            <h2>Option Chain &nbsp;<span class="sub" id="expiryLabel">Loading…</span></h2>
+            <span class="sub">Auto-refresh every 5s</span>
+        </div>
+        <div class="table-scroll">
+            <table class="option-table" id="optionTable">
+                <thead>
+                    <tr>
+                        <th colspan="4" class="ce-head">CALLS</th>
+                        <th class="strike-head">STRIKE</th>
+                        <th colspan="4" class="pe-head">PUTS</th>
+                    </tr>
+                    <tr>
+                        <th class="ce-head">Volume</th>
+                        <th class="ce-head">OI</th>
+                        <th class="ce-head">Chg OI</th>
+                        <th class="ce-head">LTP</th>
+                        <th class="strike-head"></th>
+                        <th class="pe-head">LTP</th>
+                        <th class="pe-head">Chg OI</th>
+                        <th class="pe-head">OI</th>
+                        <th class="pe-head">Volume</th>
+                    </tr>
+                </thead>
+                <tbody id="chainBody">
+                    <tr><td colspan="9" style="text-align:center;padding:2.5rem;color:var(--muted)">Loading market data…</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+</div>
+<script src="/static/js/script.js"></script>
 </body>
 </html>

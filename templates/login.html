@@ -3,15 +3,41 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - Options Dashboard</title>
+    <title>Login · Nexus Options</title>
     <link rel="stylesheet" href="/static/css/style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body class="login-body">
-    <div class="glass-panel login-card">
-        <h1>Zerodha Dashboard</h1>
-        <p>Connect your Kite account to stream live live NIFTY options data.</p>
-        <a href="/login" class="btn-primary">Login with Kite</a>
+    <div class="login-card glass-panel">
+        <div class="login-logo">
+            <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect width="40" height="40" rx="12" fill="url(#grad)"/>
+                <path d="M12 28L20 12L28 28" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M14.5 23H25.5" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+                <defs>
+                    <linearGradient id="grad" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
+                        <stop stop-color="#3b82f6"/>
+                        <stop offset="1" stop-color="#8b5cf6"/>
+                    </linearGradient>
+                </defs>
+            </svg>
+        </div>
+        <h1>Nexus Options</h1>
+        <p>Real-time NIFTY option chain · Powered by Zerodha Kite</p>
+
+        {% if error %}
+        <div class="error-banner">⚠ {{ error }}</div>
+        {% endif %}
+
+        <a href="/login" class="btn-primary" id="loginBtn">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
+                <polyline points="10 17 15 12 10 7"/>
+                <line x1="15" y1="12" x2="3" y2="12"/>
+            </svg>
+            Login with Zerodha Kite
+        </a>
+        <p class="login-hint">You'll be redirected to Kite for secure authentication.<br>No passwords stored here.</p>
     </div>
 </body>
 </html>

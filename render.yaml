@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: kite-option-chain
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    plan: free
+    envVars:
+      - key: KITE_API_KEY
+        sync: false
+      - key: KITE_API_SECRET
+        sync: false
+      - key: FLASK_SECRET_KEY
+        generateValue: true
