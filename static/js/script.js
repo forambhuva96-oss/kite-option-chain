@@ -6,43 +6,74 @@
 
     const fmt  = (n) => n != null ? new Intl.NumberFormat('en-IN').format(n) : '—';
     const fmtP = (n) => n != null ? n.toFixed(2) : '—';
+    const changeSign = (v) => v > 0 ? '+' + fmtP(v) : fmtP(v);
 
-    const changeClass = (v) => v > 0 ? 'oi-change up' : v < 0 ? 'oi-change dn' : '';
-    const changeSign  = (v) => v > 0 ? '+' + fmtP(v) : fmtP(v);
-
-    function cell(cls, content) {
-        return `<td class="${cls}">${content}</td>`;
+    // Find max values across all rows for CE and PE independently
+    function findMaxes(chain) {
+        const maxes = {
+            CE: { volume: -Infinity, oi: -Infinity, oi_change: -Infinity },
+            PE: { volume: -Infinity, oi: -Infinity, oi_change: -Infinity },
+        };
+        chain.forEach(row => {
+            ['CE', 'PE'].forEach(side => {
+                const d = row[side];
+                if (!d) return;
+                if (d.volume    > maxes[side].volume)    maxes[side].volume    = d.volume;
+                if (d.oi        > maxes[side].oi)        maxes[side].oi        = d.oi;
+                if (Math.abs(d.oi_change) > Math.abs(maxes[side].oi_change))
+                    maxes[side].oi_change = d.oi_change;
+            });
+        });
+        return maxes;
     }
 
     function renderChain(data) {
         spotPriceEl.textContent = '₹' + fmt(data.spot_price);
         expiryLabel.textContent = `Expiry: ${data.expiry}`;
 
+        const maxes = findMaxes(data.chain);
+
         let html = '';
         data.chain.forEach(row => {
-            const isAtm = row.strike === data.atm_strike;
-            const ceItm = row.strike < data.atm_strike;
-            const peItm = row.strike > data.atm_strike;
-
+            const isAtm  = row.strike === data.atm_strike;
+            const ceItm  = row.strike < data.atm_strike;
+            const peItm  = row.strike > data.atm_strike;
             const ce = row.CE;
             const pe = row.PE;
 
-            const ceCls = ceItm ? 'ce-itm' : '';
-            const peCls = peItm ? 'pe-itm' : '';
+            // Helper: build a <td> with base class, optional itm, optional highlight
+            function td(side, field, content, extraCls = '') {
+                const d = side === 'CE' ? ce : pe;
+                const baseItm = side === 'CE' ? (ceItm ? 'ce-itm' : '') : (peItm ? 'pe-itm' : '');
+                const isMax = d && maxes[side][field] !== -Infinity && (
+                    field === 'oi_change'
+                        ? Math.abs(d[field]) === Math.abs(maxes[side][field])
+                        : d[field] === maxes[side][field]
+                );
+                const hlClass = isMax ? (side === 'CE' ? 'hl-ce' : 'hl-pe') : '';
+                const cls = [baseItm, hlClass, extraCls].filter(Boolean).join(' ');
+                return `<td class="${cls}">${content}</td>`;
+            }
 
             html += `<tr${isAtm ? ' class="atm-row"' : ''}>`;
-            // CALLS (right-to-left mirror of NSE: Vol, OI, ChgOI, LTP)
-            html += cell(ceCls, ce ? fmt(ce.volume) : '—');
-            html += cell(ceCls, ce ? fmt(ce.oi) : '—');
-            html += cell(ceCls + (ce ? ' ' + changeClass(ce.oi_change) : ''), ce ? changeSign(ce.oi_change) : '—');
-            html += cell(ceCls + ' ltp', ce ? fmtP(ce.ltp) : '—');
+
+            // CALLS: Volume | OI | Chg OI | LTP
+            html += td('CE', 'volume',    ce ? fmt(ce.volume)              : '—');
+            html += td('CE', 'oi',        ce ? fmt(ce.oi)                  : '—');
+            html += td('CE', 'oi_change', ce ? changeSign(ce.oi_change)    : '—',
+                       ce ? (ce.oi_change >= 0 ? 'oi-change up' : 'oi-change dn') : '');
+            html += `<td class="${ceItm ? 'ce-itm' : ''} ltp">${ce ? fmtP(ce.ltp) : '—'}</td>`;
+
             // STRIKE
             html += `<td class="strike-cell">${fmt(row.strike)}</td>`;
-            // PUTS (LTP, ChgOI, OI, Vol)
-            html += cell(peCls + ' ltp', pe ? fmtP(pe.ltp) : '—');
-            html += cell(peCls + (pe ? ' ' + changeClass(pe.oi_change) : ''), pe ? changeSign(pe.oi_change) : '—');
-            html += cell(peCls, pe ? fmt(pe.oi) : '—');
-            html += cell(peCls, pe ? fmt(pe.volume) : '—');
+
+            // PUTS: LTP | Chg OI | OI | Volume
+            html += `<td class="${peItm ? 'pe-itm' : ''} ltp">${pe ? fmtP(pe.ltp) : '—'}</td>`;
+            html += td('PE', 'oi_change', pe ? changeSign(pe.oi_change)    : '—',
+                       pe ? (pe.oi_change >= 0 ? 'oi-change up' : 'oi-change dn') : '');
+            html += td('PE', 'oi',        pe ? fmt(pe.oi)                  : '—');
+            html += td('PE', 'volume',    pe ? fmt(pe.volume)              : '—');
+
             html += '</tr>';
         });
 

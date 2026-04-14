@@ -284,6 +284,22 @@ body {
 .oi-change.up { color: #4ade80; }
 .oi-change.dn { color: #f87171; }
 
+/* ─── Max Value Highlights ──────────────────────── */
+/* Highest Volume / OI / ChgOI in CALLs → red tint  */
+.hl-ce {
+    background: rgba(239, 68, 68, 0.22) !important;
+    box-shadow: inset 2px 0 0 #ef4444;
+    font-weight: 700;
+    color: #fca5a5;
+}
+/* Highest Volume / OI / ChgOI in PUTs → green tint  */
+.hl-pe {
+    background: rgba(34, 197, 94, 0.22) !important;
+    box-shadow: inset -2px 0 0 #22c55e;
+    font-weight: 700;
+    color: #86efac;
+}
+
 /* ─── Responsive ────────────────────────────────── */
 @media (max-width: 640px) {
     .dash-header { padding: 0.8rem 1rem; }
