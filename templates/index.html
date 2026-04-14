@@ -11,7 +11,6 @@
 <body>
 <div class="dashboard">
 
-    <!-- Header -->
     <header class="dash-header glass-panel">
         <span class="logo-text">⬡ Nexus Options</span>
         <div class="header-right">
@@ -28,7 +27,6 @@
         </div>
     </header>
 
-    <!-- Table -->
     <section class="table-card glass-panel">
         <div class="table-meta">
             <h2>Option Chain &nbsp;<span class="sub" id="expiryLabel">Loading…</span></h2>
@@ -38,29 +36,33 @@
             <table class="option-table" id="optionTable">
                 <thead>
                     <tr>
-                        <th colspan="7" class="ce-head">CALLS</th>
+                        <th colspan="3" class="ce-head">CALLS — Greeks</th>
+                        <th colspan="4" class="ce-head">CALLS</th>
                         <th class="strike-head">STRIKE</th>
-                        <th colspan="7" class="pe-head">PUTS</th>
+                        <th colspan="4" class="pe-head">PUTS</th>
+                        <th colspan="3" class="pe-head">PUTS — Greeks</th>
                     </tr>
                     <tr>
-                        <!-- CALLS -->
-                        <th class="ce-head">Volume</th>
+                        <!-- CALLS Greeks (outer) -->
+                        <th class="ce-head greek-h">IV %</th>
+                        <th class="ce-head greek-h">Delta</th>
+                        <th class="ce-head greek-h">Theta</th>
+                        <!-- CALLS data -->
                         <th class="ce-head">OI</th>
                         <th class="ce-head">Chg OI</th>
-                        <th class="ce-head">IV %</th>
-                        <th class="ce-head">Delta</th>
-                        <th class="ce-head">Theta</th>
+                        <th class="ce-head">Volume</th>
                         <th class="ce-head">LTP</th>
-                        <!-- STRIKE -->
+                        <!-- Strike -->
                         <th class="strike-head"></th>
-                        <!-- PUTS -->
+                        <!-- PUTS data -->
                         <th class="pe-head">LTP</th>
-                        <th class="pe-head">Theta</th>
-                        <th class="pe-head">Delta</th>
-                        <th class="pe-head">IV %</th>
+                        <th class="pe-head">Volume</th>
                         <th class="pe-head">Chg OI</th>
                         <th class="pe-head">OI</th>
-                        <th class="pe-head">Volume</th>
+                        <!-- PUTS Greeks (outer) -->
+                        <th class="pe-head greek-h">IV %</th>
+                        <th class="pe-head greek-h">Delta</th>
+                        <th class="pe-head greek-h">Theta</th>
                     </tr>
                 </thead>
                 <tbody id="chainBody">

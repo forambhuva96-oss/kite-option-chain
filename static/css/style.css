@@ -292,6 +292,19 @@ body {
     font-size: 0.82rem;
 }
 
+/* Greek header columns — slightly dimmer than normal headers */
+.option-table thead .greek-h {
+    opacity: 0.7;
+    font-style: italic;
+}
+
+/* Separator between Greek columns and data columns */
+.option-table td:nth-child(3),
+.option-table th:nth-child(3)  { border-right: 1px solid rgba(255,255,255,0.12); }
+.option-table td:nth-child(13),
+.option-table th:nth-child(13) { border-left: 1px solid rgba(255,255,255,0.12); }
+
+
 .oi-change.up { color: #4ade80; }
 .oi-change.dn { color: #f87171; }
 
