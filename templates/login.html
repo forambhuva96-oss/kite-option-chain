@@ -29,6 +29,9 @@
         <div class="error-banner">⚠ {{ error }}</div>
         {% endif %}
 
+        {% if auto_login_enabled %}
+        <div class="auto-badge">🤖 Auto-login is configured — reconnecting...</div>
+        {% else %}
         <a href="/login" class="btn-primary" id="loginBtn">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
@@ -38,6 +41,7 @@
             Login with Zerodha Kite
         </a>
         <p class="login-hint">You'll be redirected to Kite for secure authentication.<br>No passwords stored here.</p>
+        {% endif %}
     </div>
 </body>
 </html>

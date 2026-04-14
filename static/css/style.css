@@ -111,6 +111,17 @@ body {
     margin-top: 0.25rem;
 }
 
+.auto-badge {
+    background: rgba(59,130,246,0.12);
+    border: 1px solid rgba(59,130,246,0.25);
+    color: #93c5fd;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    width: 100%;
+    margin-top: 0.5rem;
+}
+
 /* ─── Dashboard Layout ──────────────────────────── */
 .dashboard {
     max-width: 1100px;
