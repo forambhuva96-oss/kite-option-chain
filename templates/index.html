@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NIFTY Option Chain · Nexus Options</title>
-    <meta name="description" content="Real-time NIFTY & Bank Nifty option chain powered by Zerodha Kite API">
+    <meta name="description" content="Real-time NIFTY option chain with Greeks powered by Zerodha Kite API">
     <link rel="stylesheet" href="/static/css/style.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
@@ -38,24 +38,33 @@
             <table class="option-table" id="optionTable">
                 <thead>
                     <tr>
-                        <th colspan="4" class="ce-head">CALLS</th>
+                        <th colspan="7" class="ce-head">CALLS</th>
                         <th class="strike-head">STRIKE</th>
-                        <th colspan="4" class="pe-head">PUTS</th>
+                        <th colspan="7" class="pe-head">PUTS</th>
                     </tr>
                     <tr>
+                        <!-- CALLS -->
                         <th class="ce-head">Volume</th>
                         <th class="ce-head">OI</th>
                         <th class="ce-head">Chg OI</th>
+                        <th class="ce-head">IV %</th>
+                        <th class="ce-head">Delta</th>
+                        <th class="ce-head">Theta</th>
                         <th class="ce-head">LTP</th>
+                        <!-- STRIKE -->
                         <th class="strike-head"></th>
+                        <!-- PUTS -->
                         <th class="pe-head">LTP</th>
+                        <th class="pe-head">Theta</th>
+                        <th class="pe-head">Delta</th>
+                        <th class="pe-head">IV %</th>
                         <th class="pe-head">Chg OI</th>
                         <th class="pe-head">OI</th>
                         <th class="pe-head">Volume</th>
                     </tr>
                 </thead>
                 <tbody id="chainBody">
-                    <tr><td colspan="9" style="text-align:center;padding:2.5rem;color:var(--muted)">Loading market data…</td></tr>
+                    <tr><td colspan="15" style="text-align:center;padding:2.5rem;color:var(--muted)">Loading market data…</td></tr>
                 </tbody>
             </table>
         </div>

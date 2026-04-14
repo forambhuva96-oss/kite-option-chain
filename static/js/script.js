@@ -5,74 +5,78 @@
     const chainBody    = document.getElementById('chainBody');
 
     const fmt  = (n) => n != null ? new Intl.NumberFormat('en-IN').format(n) : '—';
-    const fmtP = (n) => n != null ? n.toFixed(2) : '—';
-    const changeSign = (v) => v > 0 ? '+' + fmtP(v) : fmtP(v);
+    const fmtP = (n, d = 2) => (n != null && n !== undefined) ? Number(n).toFixed(d) : '—';
+    const chSgn = (v) => v > 0 ? '+' + fmtP(v) : fmtP(v);
 
-    // Find max values across all rows for CE and PE independently
+    /* ── find max values across all rows ── */
     function findMaxes(chain) {
-        const maxes = {
+        const mx = {
             CE: { volume: -Infinity, oi: -Infinity, oi_change: -Infinity },
             PE: { volume: -Infinity, oi: -Infinity, oi_change: -Infinity },
         };
-        chain.forEach(row => {
-            ['CE', 'PE'].forEach(side => {
-                const d = row[side];
-                if (!d) return;
-                if (d.volume    > maxes[side].volume)    maxes[side].volume    = d.volume;
-                if (d.oi        > maxes[side].oi)        maxes[side].oi        = d.oi;
-                if (Math.abs(d.oi_change) > Math.abs(maxes[side].oi_change))
-                    maxes[side].oi_change = d.oi_change;
+        chain.forEach(r => {
+            ['CE', 'PE'].forEach(s => {
+                const d = r[s]; if (!d) return;
+                if (d.volume > mx[s].volume) mx[s].volume = d.volume;
+                if (d.oi     > mx[s].oi)     mx[s].oi     = d.oi;
+                if (Math.abs(d.oi_change) > Math.abs(mx[s].oi_change))
+                    mx[s].oi_change = d.oi_change;
             });
         });
-        return maxes;
+        return mx;
+    }
+
+    /* ── build one <td> ── */
+    function td(content, classes = []) {
+        const cls = classes.filter(Boolean).join(' ');
+        return `<td${cls ? ` class="${cls}"` : ''}>${content}</td>`;
     }
 
     function renderChain(data) {
         spotPriceEl.textContent = '₹' + fmt(data.spot_price);
         expiryLabel.textContent = `Expiry: ${data.expiry}`;
-
-        const maxes = findMaxes(data.chain);
+        const mx = findMaxes(data.chain);
 
         let html = '';
         data.chain.forEach(row => {
-            const isAtm  = row.strike === data.atm_strike;
-            const ceItm  = row.strike < data.atm_strike;
-            const peItm  = row.strike > data.atm_strike;
-            const ce = row.CE;
-            const pe = row.PE;
+            const isAtm = row.strike === data.atm_strike;
+            const ceItm = row.strike < data.atm_strike;
+            const peItm = row.strike > data.atm_strike;
+            const ce = row.CE, pe = row.PE;
 
-            // Helper: build a <td> with base class, optional itm, optional highlight
-            function td(side, field, content, extraCls = '') {
-                const d = side === 'CE' ? ce : pe;
-                const baseItm = side === 'CE' ? (ceItm ? 'ce-itm' : '') : (peItm ? 'pe-itm' : '');
-                const isMax = d && maxes[side][field] !== -Infinity && (
-                    field === 'oi_change'
-                        ? Math.abs(d[field]) === Math.abs(maxes[side][field])
-                        : d[field] === maxes[side][field]
-                );
-                const hlClass = isMax ? (side === 'CE' ? 'hl-ce' : 'hl-pe') : '';
-                const cls = [baseItm, hlClass, extraCls].filter(Boolean).join(' ');
-                return `<td class="${cls}">${content}</td>`;
-            }
+            const hlCls = (side, field, d) => {
+                if (!d) return null;
+                const val = mx[side][field];
+                const match = field === 'oi_change'
+                    ? Math.abs(d[field]) === Math.abs(val)
+                    : d[field] === val;
+                return match && val !== -Infinity ? (side === 'CE' ? 'hl-ce' : 'hl-pe') : null;
+            };
 
             html += `<tr${isAtm ? ' class="atm-row"' : ''}>`;
 
-            // CALLS: Volume | OI | Chg OI | LTP
-            html += td('CE', 'volume',    ce ? fmt(ce.volume)              : '—');
-            html += td('CE', 'oi',        ce ? fmt(ce.oi)                  : '—');
-            html += td('CE', 'oi_change', ce ? changeSign(ce.oi_change)    : '—',
-                       ce ? (ce.oi_change >= 0 ? 'oi-change up' : 'oi-change dn') : '');
-            html += `<td class="${ceItm ? 'ce-itm' : ''} ltp">${ce ? fmtP(ce.ltp) : '—'}</td>`;
+            // ── CALLS (7 cols) ──
+            html += td(ce ? fmt(ce.volume) : '—',    [ceItm?'ce-itm':null, hlCls('CE','volume',ce)]);
+            html += td(ce ? fmt(ce.oi) : '—',        [ceItm?'ce-itm':null, hlCls('CE','oi',ce)]);
+            html += td(ce ? chSgn(ce.oi_change):'—', [ceItm?'ce-itm':null, hlCls('CE','oi_change',ce),
+                                                        ce&&ce.oi_change>=0?'oi-change up':'oi-change dn']);
+            html += td(ce && ce.iv    != null ? fmtP(ce.iv)    : '—', [ceItm?'ce-itm':null,'greek']);
+            html += td(ce && ce.delta != null ? fmtP(ce.delta,3):'—', [ceItm?'ce-itm':null,'greek']);
+            html += td(ce && ce.theta != null ? fmtP(ce.theta) : '—', [ceItm?'ce-itm':null,'greek']);
+            html += td(ce ? fmtP(ce.ltp) : '—',     [ceItm?'ce-itm':null,'ltp']);
 
-            // STRIKE
+            // ── STRIKE ──
             html += `<td class="strike-cell">${fmt(row.strike)}</td>`;
 
-            // PUTS: LTP | Chg OI | OI | Volume
-            html += `<td class="${peItm ? 'pe-itm' : ''} ltp">${pe ? fmtP(pe.ltp) : '—'}</td>`;
-            html += td('PE', 'oi_change', pe ? changeSign(pe.oi_change)    : '—',
-                       pe ? (pe.oi_change >= 0 ? 'oi-change up' : 'oi-change dn') : '');
-            html += td('PE', 'oi',        pe ? fmt(pe.oi)                  : '—');
-            html += td('PE', 'volume',    pe ? fmt(pe.volume)              : '—');
+            // ── PUTS (7 cols, mirrored) ──
+            html += td(pe ? fmtP(pe.ltp) : '—',     [peItm?'pe-itm':null,'ltp']);
+            html += td(pe && pe.theta != null ? fmtP(pe.theta) : '—', [peItm?'pe-itm':null,'greek']);
+            html += td(pe && pe.delta != null ? fmtP(pe.delta,3):'—', [peItm?'pe-itm':null,'greek']);
+            html += td(pe && pe.iv    != null ? fmtP(pe.iv)    : '—', [peItm?'pe-itm':null,'greek']);
+            html += td(pe ? chSgn(pe.oi_change):'—', [peItm?'pe-itm':null, hlCls('PE','oi_change',pe),
+                                                        pe&&pe.oi_change>=0?'oi-change up':'oi-change dn']);
+            html += td(pe ? fmt(pe.oi) : '—',        [peItm?'pe-itm':null, hlCls('PE','oi',pe)]);
+            html += td(pe ? fmt(pe.volume) : '—',    [peItm?'pe-itm':null, hlCls('PE','volume',pe)]);
 
             html += '</tr>';
         });
@@ -83,7 +87,7 @@
     async function fetchData() {
         const symbol = symbolSelect.value;
         try {
-            const res = await fetch(`/api/option-chain?symbol=${symbol}`);
+            const res  = await fetch(`/api/option-chain?symbol=${symbol}`);
             if (res.status === 401) { window.location.href = '/'; return; }
             const data = await res.json();
             if (data.success) {
@@ -99,7 +103,7 @@
     }
 
     symbolSelect.addEventListener('change', () => {
-        chainBody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:2.5rem;color:var(--muted)">Loading…</td></tr>';
+        chainBody.innerHTML = '<tr><td colspan="15" style="text-align:center;padding:2.5rem;color:var(--muted)">Loading…</td></tr>';
         fetchData();
     });
 
