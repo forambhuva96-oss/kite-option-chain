@@ -8,26 +8,31 @@
     const fmtP = (n, d = 2) => (n != null && n !== undefined) ? Number(n).toFixed(d) : '—';
     const chSgn = (v) => v > 0 ? '+' + fmtP(v) : fmtP(v);
 
-    /* ── find max values in ATM + OTM rows only ── */
+    /* ── find top-2 values in ATM + OTM rows only ── */
     function findMaxes(chain, atm_strike) {
+        // Each field stores [1st, 2nd] max values
         const mx = {
-            CE: { volume: -Infinity, oi: -Infinity, oi_change: -Infinity },
-            PE: { volume: -Infinity, oi: -Infinity, oi_change: -Infinity },
+            CE: { volume:[-Infinity,-Infinity], oi:[-Infinity,-Infinity], oi_change:[-Infinity,-Infinity] },
+            PE: { volume:[-Infinity,-Infinity], oi:[-Infinity,-Infinity], oi_change:[-Infinity,-Infinity] },
         };
+        function update(arr, val) {
+            if (val > arr[0])      { arr[1] = arr[0]; arr[0] = val; }
+            else if (val > arr[1]) { arr[1] = val; }
+        }
         chain.forEach(r => {
             // CE: ATM and OTM calls → strike >= atm
             if (r.strike >= atm_strike && r.CE) {
                 const d = r.CE;
-                if (d.volume > mx.CE.volume) mx.CE.volume = d.volume;
-                if (d.oi     > mx.CE.oi)     mx.CE.oi     = d.oi;
-                if (Math.abs(d.oi_change) > Math.abs(mx.CE.oi_change)) mx.CE.oi_change = d.oi_change;
+                update(mx.CE.volume,    d.volume);
+                update(mx.CE.oi,        d.oi);
+                update(mx.CE.oi_change, Math.abs(d.oi_change));
             }
             // PE: ATM and OTM puts → strike <= atm
             if (r.strike <= atm_strike && r.PE) {
                 const d = r.PE;
-                if (d.volume > mx.PE.volume) mx.PE.volume = d.volume;
-                if (d.oi     > mx.PE.oi)     mx.PE.oi     = d.oi;
-                if (Math.abs(d.oi_change) > Math.abs(mx.PE.oi_change)) mx.PE.oi_change = d.oi_change;
+                update(mx.PE.volume,    d.volume);
+                update(mx.PE.oi,        d.oi);
+                update(mx.PE.oi_change, Math.abs(d.oi_change));
             }
         });
         return mx;
@@ -53,11 +58,11 @@
 
             const hlCls = (side, field, d) => {
                 if (!d) return null;
-                const val = mx[side][field];
-                const match = field === 'oi_change'
-                    ? Math.abs(d[field]) === Math.abs(val)
-                    : d[field] === val;
-                return match && val !== -Infinity ? (side === 'CE' ? 'hl-ce' : 'hl-pe') : null;
+                const arr  = mx[side][field];           // [1st, 2nd]
+                const val  = field === 'oi_change' ? Math.abs(d[field]) : d[field];
+                if (val === arr[0] && arr[0] !== -Infinity) return side === 'CE' ? 'hl-ce' : 'hl-pe';
+                if (val === arr[1] && arr[1] !== -Infinity) return 'hl-2nd';
+                return null;
             };
 
             html += `<tr${isAtm ? ' class="atm-row"' : ''}>`;

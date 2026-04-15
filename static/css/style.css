@@ -323,6 +323,13 @@ body {
     font-weight: 700;
     color: #86efac;
 }
+/* 2nd highest (both sides) → light yellow tint */
+.hl-2nd {
+    background: rgba(234, 179, 8, 0.18) !important;
+    box-shadow: inset 0 -2px 0 rgba(234,179,8,0.6);
+    font-weight: 600;
+    color: #fde68a;
+}
 
 /* ─── Responsive ────────────────────────────────── */
 @media (max-width: 640px) {
