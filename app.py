@@ -95,6 +95,11 @@ ZERODHA_TOTP_SECRET = os.getenv("ZERODHA_TOTP_SECRET")
 _server_access_token = None
 instruments_cache    = {"date": None, "data": None}
 
+# OI baseline cache — stores first OI reading of each day per symbol
+# Used to compute intraday Change in OI = current_oi - baseline_oi
+oi_baseline = {"date": None, "data": {}}   # {"NFO:XXX": oi_at_open}
+
+
 # ─────────────────────────────────────────────
 # Auto-login (TOTP)
 # ─────────────────────────────────────────────
@@ -255,13 +260,24 @@ def api_option_chain():
         expiry_dt = datetime.combine(nearest_expiry, datetime.min.time()).replace(hour=15, minute=30)
         T = max((expiry_dt - now).total_seconds() / (365.25 * 24 * 3600), 0)
 
-        strike_diff  = 50 if symbol == "NIFTY" else 100
-        atm_strike   = round(spot_price / strike_diff) * strike_diff
-        target_strikes = [atm_strike + i * strike_diff for i in range(-5, 6)]
+        strike_diff    = 50 if symbol == "NIFTY" else 100
+        atm_strike     = round(spot_price / strike_diff) * strike_diff
+        target_strikes = [atm_strike + i * strike_diff for i in range(-10, 11)]  # ATM ±10
+
         df_filtered  = df_exp[df_exp["strike"].isin(target_strikes)]
 
-        opt_syms  = ["NFO:" + s for s in df_filtered["tradingsymbol"].tolist()]
+        opt_syms   = ["NFO:" + s for s in df_filtered["tradingsymbol"].tolist()]
         opt_quotes = kite.quote(opt_syms) if opt_syms else {}
+
+        # ── Update OI baseline (first read of the day per symbol) ──────────
+        today = datetime.now(pytz.timezone('Asia/Kolkata')).date()
+        if oi_baseline["date"] != today:
+            oi_baseline["data"] = {}
+            oi_baseline["date"] = today
+        for sym, q in opt_quotes.items():
+            if sym not in oi_baseline["data"]:
+                oi_baseline["data"][sym] = q.get("oi", 0)
+
 
         chain_data = []
         for strike in target_strikes:
@@ -274,16 +290,19 @@ def api_option_chain():
                 if not row.empty:
                     sym = "NFO:" + row.iloc[0]["tradingsymbol"]
                     if sym in opt_quotes:
-                        q   = opt_quotes[sym]
-                        ltp = round(q.get("last_price", 0), 2)
-                        greeks = compute_greeks(spot_price, strike, T, ltp, kind)
+                        q    = opt_quotes[sym]
+                        ltp  = round(q.get("last_price", 0), 2)
+                        curr_oi  = q.get("oi", 0)
+                        base_oi  = oi_baseline["data"].get(sym, curr_oi)
+                        greeks   = compute_greeks(spot_price, strike, T, ltp, kind)
                         entry[kind] = {
                             "ltp":       ltp,
                             "volume":    q.get("volume", 0),
-                            "oi":        q.get("oi", 0),
-                            "oi_change": q.get("oi_day_change", q.get("net_change", 0)),
+                            "oi":        curr_oi,
+                            "oi_change": curr_oi - base_oi,   # real intraday OI δ
                             **(greeks or {}),
                         }
+
             chain_data.append(entry)
 
         return jsonify({
