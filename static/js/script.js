@@ -8,22 +8,31 @@
     const fmtP = (n, d = 2) => (n != null && n !== undefined) ? Number(n).toFixed(d) : '—';
     const chSgn = (v) => v > 0 ? '+' + fmtP(v) : fmtP(v);
 
-    function findMaxes(chain) {
+    /* ── find max values in ATM + OTM rows only ── */
+    function findMaxes(chain, atm_strike) {
         const mx = {
             CE: { volume: -Infinity, oi: -Infinity, oi_change: -Infinity },
             PE: { volume: -Infinity, oi: -Infinity, oi_change: -Infinity },
         };
         chain.forEach(r => {
-            ['CE', 'PE'].forEach(s => {
-                const d = r[s]; if (!d) return;
-                if (d.volume > mx[s].volume) mx[s].volume = d.volume;
-                if (d.oi     > mx[s].oi)     mx[s].oi     = d.oi;
-                if (Math.abs(d.oi_change) > Math.abs(mx[s].oi_change))
-                    mx[s].oi_change = d.oi_change;
-            });
+            // CE: ATM and OTM calls → strike >= atm
+            if (r.strike >= atm_strike && r.CE) {
+                const d = r.CE;
+                if (d.volume > mx.CE.volume) mx.CE.volume = d.volume;
+                if (d.oi     > mx.CE.oi)     mx.CE.oi     = d.oi;
+                if (Math.abs(d.oi_change) > Math.abs(mx.CE.oi_change)) mx.CE.oi_change = d.oi_change;
+            }
+            // PE: ATM and OTM puts → strike <= atm
+            if (r.strike <= atm_strike && r.PE) {
+                const d = r.PE;
+                if (d.volume > mx.PE.volume) mx.PE.volume = d.volume;
+                if (d.oi     > mx.PE.oi)     mx.PE.oi     = d.oi;
+                if (Math.abs(d.oi_change) > Math.abs(mx.PE.oi_change)) mx.PE.oi_change = d.oi_change;
+            }
         });
         return mx;
     }
+
 
     function td(content, classes = []) {
         const cls = classes.filter(Boolean).join(' ');
@@ -33,7 +42,7 @@
     function renderChain(data) {
         spotPriceEl.textContent = '₹' + fmt(data.spot_price);
         expiryLabel.textContent = `Expiry: ${data.expiry}`;
-        const mx = findMaxes(data.chain);
+        const mx = findMaxes(data.chain, data.atm_strike);
 
         let html = '';
         data.chain.forEach(row => {
