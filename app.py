@@ -259,6 +259,28 @@ def api_status():
     return jsonify({"auto_login_active": bool(_server_access_token),
                     "session_active": "access_token" in session})
 
+
+@app.route("/api/expiries")
+def api_expiries():
+    """Return available expiry dates for a symbol."""
+    kite = get_kite_client()
+    if not kite:
+        return jsonify({"error": "Unauthorized"}), 401
+    symbol = request.args.get("symbol", "NIFTY")
+    if symbol not in ["NIFTY", "BANKNIFTY"]:
+        return jsonify({"error": "Invalid symbol"}), 400
+    df = get_nfo_instruments(kite)
+    if df is None:
+        return jsonify({"error": "Failed to load instruments"}), 500
+    df_sym = df[(df["name"] == symbol) & (df["segment"] == "NFO-OPT")]
+    expiries = sorted(df_sym["expiry"].dropna().unique())
+    return jsonify({
+        "success": True,
+        "expiries": [e.strftime("%Y-%m-%d") for e in expiries[:10]],
+        "labels":   [e.strftime("%d %b '%y") for e in expiries[:10]],
+    })
+
+
 @app.route("/api/option-chain")
 def api_option_chain():
     kite = get_kite_client()
@@ -289,12 +311,23 @@ def api_option_chain():
         if not expiries:
             return jsonify({"error": "No expiries"}), 404
 
-        nearest_expiry = expiries[0]
-        df_exp = df_sym[df_sym["expiry"] == nearest_expiry].copy()
+        # Use expiry from query param if provided and valid, else use nearest
+        expiry_param = request.args.get("expiry")   # "YYYY-MM-DD"
+        selected_expiry = expiries[0]               # default = nearest
+        if expiry_param:
+            from datetime import date as _date
+            try:
+                req_date = _date.fromisoformat(expiry_param)
+                if req_date in [e for e in expiries]:
+                    selected_expiry = req_date
+            except ValueError:
+                pass
+
+        df_exp = df_sym[df_sym["expiry"] == selected_expiry].copy()
 
         # Time to expiry in years
         now = datetime.now()
-        expiry_dt = datetime.combine(nearest_expiry, datetime.min.time()).replace(hour=15, minute=30)
+        expiry_dt = datetime.combine(selected_expiry, datetime.min.time()).replace(hour=15, minute=30)
         T = max((expiry_dt - now).total_seconds() / (365.25 * 24 * 3600), 0)
 
         strike_diff    = 50 if symbol == "NIFTY" else 100
@@ -340,7 +373,12 @@ def api_option_chain():
             "success":    True,
             "spot_price": spot_price,
             "atm_strike": atm_strike,
-            "expiry":     nearest_expiry.strftime("%d %b %Y"),
+            "expiry":     selected_expiry.strftime("%d %b %Y"),
+            "expiry_val": selected_expiry.strftime("%Y-%m-%d"),
+            "all_expiries": [
+                {"value": e.strftime("%Y-%m-%d"), "label": e.strftime("%d %b '%y")}
+                for e in expiries[:10]
+            ],
             "chain":      chain_data,
             "auto_login": bool(_server_access_token),
         })
