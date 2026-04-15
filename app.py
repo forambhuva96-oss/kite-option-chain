@@ -95,9 +95,46 @@ ZERODHA_TOTP_SECRET = os.getenv("ZERODHA_TOTP_SECRET")
 _server_access_token = None
 instruments_cache    = {"date": None, "data": None}
 
-# OI baseline cache — stores first OI reading of each day per symbol
-# Used to compute intraday Change in OI = current_oi - baseline_oi
-oi_baseline = {"date": None, "data": {}}   # {"NFO:XXX": oi_at_open}
+# OI baseline: keyed by NFO tradingsymbol, value = previous day's closing OI
+# Rebuilt once per calendar day via Kite historical API (survives cold restarts)
+oi_baseline = {"date": None, "data": {}}   # {"NFO:XXXXX": prev_close_oi}
+
+
+def build_oi_baseline(kite, df_filtered, today):
+    """
+    Fetch the most-recent trading day's closing OI for each option
+    in df_filtered. Called once per calendar day; skips if already built.
+    """
+    global oi_baseline
+    if oi_baseline["date"] == today:
+        return  # already fresh
+
+    from datetime import timedelta
+
+    # Walk back to find the last trading weekday (Mon-Fri)
+    prev_day = datetime.now().date() - timedelta(days=1)
+    while prev_day.weekday() >= 5:           # 5=Sat, 6=Sun
+        prev_day -= timedelta(days=1)
+
+    from_str = prev_day.strftime("%Y-%m-%d")
+    to_str   = today.strftime("%Y-%m-%d")
+
+    new_baseline = {}
+    for _, row in df_filtered.iterrows():
+        try:
+            token = int(row["instrument_token"])
+            sym   = "NFO:" + row["tradingsymbol"]
+            hist  = kite.historical_data(token, from_str, to_str, "day")
+            if hist:
+                new_baseline[sym] = hist[-1].get("oi", 0)   # last completed candle
+        except Exception as e:
+            print(f"[oi_baseline] {row['tradingsymbol']}: {e}")
+            new_baseline["NFO:" + row["tradingsymbol"]] = 0
+
+    oi_baseline["data"] = new_baseline
+    oi_baseline["date"] = today
+    print(f"[oi_baseline] Built for {len(new_baseline)} symbols on {today}")
+
 
 
 # ─────────────────────────────────────────────
@@ -269,15 +306,9 @@ def api_option_chain():
         opt_syms   = ["NFO:" + s for s in df_filtered["tradingsymbol"].tolist()]
         opt_quotes = kite.quote(opt_syms) if opt_syms else {}
 
-        # ── Update OI baseline (first read of the day per symbol) ──────────
-        today = datetime.now(pytz.timezone('Asia/Kolkata')).date()
-        if oi_baseline["date"] != today:
-            oi_baseline["data"] = {}
-            oi_baseline["date"] = today
-        for sym, q in opt_quotes.items():
-            if sym not in oi_baseline["data"]:
-                oi_baseline["data"][sym] = q.get("oi", 0)
-
+        # ── Build yesterday's OI baseline (once per day, survives cold restart) ──
+        today = datetime.now(pytz.timezone("Asia/Kolkata")).date()
+        build_oi_baseline(kite, df_filtered, today)
 
         chain_data = []
         for strike in target_strikes:
