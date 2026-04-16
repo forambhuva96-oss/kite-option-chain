@@ -18,9 +18,9 @@ load_dotenv()
 # Remove legacy JSON snapshot path
 IST = pytz.timezone("Asia/Kolkata")
 
-# ─────────────────────────────────────────────
+# ---------------------------------------------
 # Black-Scholes Greeks  (stdlib only, no scipy)
-# ─────────────────────────────────────────────
+# ---------------------------------------------
 RISK_FREE_RATE = 0.065   # ~6.5% Indian T-bill
 
 def _ncdf(x):
@@ -82,9 +82,9 @@ def compute_greeks(S, K, T, ltp, kind):
     except Exception:
         return None
 
-# ─────────────────────────────────────────────
+# ---------------------------------------------
 # Flask setup
-# ─────────────────────────────────────────────
+# ---------------------------------------------
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", secrets.token_hex(32))
 app.config["SESSION_PERMANENT"] = False
@@ -113,31 +113,31 @@ def _seed_intraday_fallback(opt_quotes: dict, intraday_db: dict, today_str: str)
     """
     global _intraday_fallback
     if _intraday_fallback["date"] != today_str:
-        # New day — reset fallback
+        # New day - reset fallback
         _intraday_fallback["date"] = today_str
         _intraday_fallback["data"] = {}
 
     # Only use fallback when DB snapshot is absent
     if intraday_db:
-        return  # DB has data — no need for fallback
+        return  # DB has data - no need for fallback
 
     for sym, q in opt_quotes.items():
         if sym not in _intraday_fallback["data"]:
             _intraday_fallback["data"][sym] = q.get("oi", 0)
 
 
-# ─────────────────────────────────────────────
+# ---------------------------------------------
 # OI Snapshot wrappers  (delegates to oi_tracker)
-# ─────────────────────────────────────────────
+# ---------------------------------------------
 def take_snapshot(label: str):
     """
     Called by the scheduler:
-      - 'OPEN' at 09:15 IST  → used for intraday OI change
-      - 'EOD'  at 15:29 IST  → used as next day's overnight baseline
+      - 'OPEN' at 09:15 IST  -> used for intraday OI change
+      - 'EOD'  at 15:29 IST  -> used as next day's overnight baseline
     """
     kite = get_kite_client()
     if kite is None:
-        print(f"[scheduler] No kite session — skipping {label} snapshot.")
+        print(f"[scheduler] No kite session - skipping {label} snapshot.")
         return
     oi_tracker.save_snapshot(kite, label)
 
@@ -148,16 +148,16 @@ def take_snapshot(label: str):
 
 
 
-# ─────────────────────────────────────────────
+# ---------------------------------------------
 # Auto-login (TOTP)
-# ─────────────────────────────────────────────
+# ---------------------------------------------
 def auto_login():
     global _server_access_token
     if not all([ZERODHA_USER_ID, ZERODHA_PASSWORD, ZERODHA_TOTP_SECRET]):
-        print("[auto_login] Credentials not set — skipping.")
+        print("[auto_login] Credentials not set - skipping.")
         return False
     try:
-        print("[auto_login] Starting automated login…")
+        print("[auto_login] Starting automated login...")
         s = req.Session()
         r1 = s.post("https://kite.zerodha.com/api/login",
                     data={"user_id": ZERODHA_USER_ID, "password": ZERODHA_PASSWORD},
@@ -189,17 +189,17 @@ def auto_login():
         if not req_token:
             print("[auto_login] Could not extract request_token. Redirect chain:")
             for resp in r3.history:
-                print("  →", resp.url)
-            print("  →", r3.url)
+                print("  ->", resp.url)
+            print("  ->", r3.url)
             return False
         kite = KiteConnect(api_key=KITE_API_KEY)
         sess = kite.generate_session(req_token, api_secret=KITE_API_SECRET)
         _server_access_token = sess["access_token"]
-        print(f"[auto_login] ✅ Done at {datetime.now().strftime('%H:%M:%S')}")
+        print(f"[auto_login] OK - Done at {datetime.now().strftime('%H:%M:%S')}")
         return True
     except Exception as e:
         import traceback; traceback.print_exc()
-        print("[auto_login] ❌ Error:", e)
+        print("[auto_login] FAILED:", str(e))
         return False
 
 def start_scheduler():
@@ -208,20 +208,20 @@ def start_scheduler():
     # Auto-login every morning before market opens
     scheduler.add_job(auto_login, "cron", hour=8, minute=45,
                       id="daily_login", replace_existing=True)
-    # Save market-OPEN OI at 09:15 IST → used for intraday OI change during the day
+    # Save market-OPEN OI at 09:15 IST -> used for intraday OI change during the day
     scheduler.add_job(lambda: take_snapshot("OPEN"), "cron",
                       hour=9, minute=15, day_of_week="mon-fri",
                       id="oi_open_snapshot", replace_existing=True)
-    # Save EOD OI at 15:29 IST → used as next day's overnight baseline
+    # Save EOD OI at 15:29 IST -> used as next day's overnight baseline
     scheduler.add_job(lambda: take_snapshot("EOD"), "cron",
                       hour=15, minute=29, day_of_week="mon-fri",
                       id="oi_eod_snapshot", replace_existing=True)
     scheduler.start()
     print("[scheduler] Jobs: login@08:45, OPEN-snapshot@09:15, EOD-snapshot@15:29 (Mon-Fri)")
 
-# ─────────────────────────────────────────────
+# ---------------------------------------------
 # Helpers
-# ─────────────────────────────────────────────
+# ---------------------------------------------
 def get_kite_client():
     if _server_access_token:
         return KiteConnect(api_key=KITE_API_KEY, access_token=_server_access_token)
@@ -241,9 +241,9 @@ def get_nfo_instruments(kite):
             return None
     return instruments_cache["data"]
 
-# ─────────────────────────────────────────────
+# ---------------------------------------------
 # Routes
-# ─────────────────────────────────────────────
+# ---------------------------------------------
 @app.route("/")
 def index():
     req_token = request.args.get("request_token")
@@ -290,6 +290,16 @@ def api_status():
         "auto_login_active":  bool(_server_access_token),
         "session_active":     "access_token" in session,
         "snapshot_status":    snap,
+    })
+
+@app.route("/api/force-login")
+def api_force_login():
+    """Trigger auto-login immediately. Useful on first start / token expiry."""
+    result = auto_login()
+    return jsonify({
+        "success": result,
+        "token_active": bool(_server_access_token),
+        "message": "Login successful" if result else "Login failed - check credentials/TOTP"
     })
 
 @app.route("/api/debug-hi")
@@ -388,14 +398,14 @@ def api_option_chain():
         opt_syms   = ["NFO:" + s for s in df_filtered["tradingsymbol"].tolist()]
         opt_quotes = kite.quote(opt_syms) if opt_syms else {}
 
-        # ── Load baseline dicts from SQLite via oi_tracker ──────────────────
-        # overnight_base : yesterday's EOD OI  → Overnight OI Change
-        # intraday_base  : today's 09:15 OI    → Intraday OI Change
+        # -- Load baseline dicts from SQLite via oi_tracker ------------------
+        # overnight_base : yesterday's EOD OI  -> Overnight OI Change
+        # intraday_base  : today's 09:15 OI    -> Intraday OI Change
         expiry_str       = selected_expiry.strftime("%Y-%m-%d")
         overnight_base   = oi_tracker.get_eod_snapshot(symbol, expiry_str)
         intraday_base    = oi_tracker.get_open_snapshot(symbol, expiry_str)
 
-        # ── In-memory live session fallback for intraday ──────────────────────
+        # -- In-memory live session fallback for intraday ----------------------
         # If no 09:15 snapshot yet (e.g. app just started), we track live OI
         # from first fetch. Stored in a module-level dict so it persists between
         # requests without being overwritten.
@@ -456,9 +466,9 @@ def api_option_chain():
         import traceback; traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
-# ─────────────────────────────────────────────
+# ---------------------------------------------
 # Startup
-# ─────────────────────────────────────────────
+# ---------------------------------------------
 oi_tracker.init_db()   # ensure SQLite tables exist
 auto_login()
 start_scheduler()

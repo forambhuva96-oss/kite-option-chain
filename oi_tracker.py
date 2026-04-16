@@ -4,8 +4,8 @@ oi_tracker.py  –  OI Snapshot Storage & Retrieval
 Stores option chain OI in a local SQLite database.
 
 Two types of snapshots are saved each trading day:
-  - 'OPEN'  : Saved at 09:15 AM  → used for Intraday OI Change
-  - 'EOD'   : Saved at 03:29 PM  → used as next day's Overnight OI Change baseline
+  - 'OPEN'  : Saved at 09:15 AM  -> used for Intraday OI Change
+  - 'EOD'   : Saved at 03:29 PM  -> used as next day's Overnight OI Change baseline
 
 Usage (from app.py):
   import oi_tracker
@@ -21,14 +21,14 @@ import pandas as pd
 import pytz
 from datetime import datetime, timedelta
 
-# ── Database file lives in the same folder as this script ───────────────────
+# -- Database file lives in the same folder as this script -------------------
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "oi_data.db")
 IST = pytz.timezone("Asia/Kolkata")
 
 
-# ────────────────────────────────────────────────────────────────────────────
+# ----------------------------------------------------------------------------
 # 1.  Database setup
-# ────────────────────────────────────────────────────────────────────────────
+# ----------------------------------------------------------------------------
 def init_db():
     """
     Create the SQLite database and tables if they don't already exist.
@@ -60,9 +60,9 @@ def init_db():
     print("[oi_tracker] DB ready:", DB_PATH)
 
 
-# ────────────────────────────────────────────────────────────────────────────
+# ----------------------------------------------------------------------------
 # 2.  Save a snapshot
-# ────────────────────────────────────────────────────────────────────────────
+# ----------------------------------------------------------------------------
 def save_snapshot(kite, label: str):
     """
     Fetch live OI for NIFTY + BANKNIFTY (ATM ± 15 strikes, nearest expiry)
@@ -87,7 +87,7 @@ def save_snapshot(kite, label: str):
     df_all   = pd.DataFrame(all_inst)
 
     for symbol in ["NIFTY", "BANKNIFTY"]:
-        # ── Get spot price ──────────────────────────────────────────────────
+        # -- Get spot price --------------------------------------------------
         spot_sym = "NSE:NIFTY 50" if symbol == "NIFTY" else "NSE:NIFTY BANK"
         try:
             spot_price = kite.quote([spot_sym])[spot_sym]["last_price"]
@@ -95,12 +95,12 @@ def save_snapshot(kite, label: str):
             print(f"[oi_tracker] Spot fetch failed for {symbol}: {e}")
             continue
 
-        # ── Find ATM ±15 strikes ────────────────────────────────────────────
+        # -- Find ATM ±15 strikes --------------------------------------------
         strike_diff = 50 if symbol == "NIFTY" else 100
         atm_strike  = round(spot_price / strike_diff) * strike_diff
         strikes     = [atm_strike + i * strike_diff for i in range(-15, 16)]
 
-        # ── Filter options for nearest expiry ───────────────────────────────
+        # -- Filter options for nearest expiry -------------------------------
         df_sym  = df_all[(df_all["name"] == symbol) & (df_all["segment"] == "NFO-OPT")]
         expiries = sorted(df_sym["expiry"].dropna().unique())
         if not expiries:
@@ -115,14 +115,14 @@ def save_snapshot(kite, label: str):
         if not opt_syms:
             continue
 
-        # ── Fetch live OI quotes ─────────────────────────────────────────────
+        # -- Fetch live OI quotes ---------------------------------------------
         try:
             quotes = kite.quote(opt_syms)
         except Exception as e:
             print(f"[oi_tracker] Quote fetch failed for {symbol}: {e}")
             continue
 
-        # ── Build rows for DB ────────────────────────────────────────────────
+        # -- Build rows for DB ------------------------------------------------
         for _, inst_row in df_filt.iterrows():
             nfo_sym = "NFO:" + inst_row["tradingsymbol"]
             if nfo_sym not in quotes:
@@ -140,7 +140,7 @@ def save_snapshot(kite, label: str):
                 saved_at,
             ))
 
-    # ── Batch insert into SQLite ─────────────────────────────────────────────
+    # -- Batch insert into SQLite ---------------------------------------------
     if rows:
         conn = sqlite3.connect(DB_PATH)
         conn.executemany("""
@@ -150,14 +150,14 @@ def save_snapshot(kite, label: str):
         """, rows)
         conn.commit()
         conn.close()
-        print(f"[oi_tracker] ✅ {label} snapshot saved — {len(rows)} rows on {today}")
+        print(f"[oi_tracker] OK {label} snapshot saved - {len(rows)} rows on {today}")
     else:
-        print(f"[oi_tracker] ⚠️  No rows saved for {label} on {today}")
+        print(f"[oi_tracker] WARN  No rows saved for {label} on {today}")
 
 
-# ────────────────────────────────────────────────────────────────────────────
+# ----------------------------------------------------------------------------
 # 3.  Load snapshots as dicts  {tradingsymbol: oi}
-# ────────────────────────────────────────────────────────────────────────────
+# ----------------------------------------------------------------------------
 def _last_trading_day(today_date):
     """Return the most recent Mon–Fri before today_date."""
     d = today_date - timedelta(days=1)
@@ -211,9 +211,9 @@ def _load_snapshot(date_str: str, label: str, symbol: str,
     return {row[0]: row[1] for row in rows}
 
 
-# ────────────────────────────────────────────────────────────────────────────
+# ----------------------------------------------------------------------------
 # 4.  Snapshot status  (used by /api/status endpoint)
-# ────────────────────────────────────────────────────────────────────────────
+# ----------------------------------------------------------------------------
 def snapshot_status() -> dict:
     """Returns info about what snapshots exist for today/yesterday."""
     if not os.path.exists(DB_PATH):
