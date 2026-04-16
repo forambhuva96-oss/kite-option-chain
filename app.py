@@ -1,5 +1,6 @@
 import os
 import math
+import json
 import secrets
 import pyotp
 import requests as req
@@ -12,6 +13,9 @@ from kiteconnect import KiteConnect
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# File where we persist yesterday's closing OI (written at 15:30 every day)
+OI_SNAPSHOT_FILE = os.path.join(os.path.dirname(__file__), "oi_snapshot.json")
 
 # ─────────────────────────────────────────────
 # Black-Scholes Greeks  (stdlib only, no scipy)
@@ -100,53 +104,120 @@ instruments_cache    = {"date": None, "data": None}
 oi_baseline = {"date": None, "data": {}}   # {"NFO:XXXXX": prev_close_oi}
 
 
-def build_oi_baseline(df_filtered, today, opt_quotes, kite):
+# ─────────────────────────────────────────────
+# OI Snapshot  (save at 15:30, load next day)
+# ─────────────────────────────────────────────
+def save_oi_snapshot():
     """
-    Establish an OI baseline to calculate 'OI Change'.
-    Tries to fetch the previous trading day's closing OI via Kite's historical API (oi=True).
-    If the Historical Add-on is not subscribed, falls back to the FIRST observed live OI
-    of today's session. The baseline is NEVER overwritten once set for a symbol.
+    Called by the scheduler at 15:30 IST every weekday.
+    Fetches current OI for all NIFTY + BANKNIFTY near-ATM strikes and
+    saves them to oi_snapshot.json as the 'yesterday closing OI' baseline.
+    """
+    kite = get_kite_client()
+    if not kite:
+        print("[snapshot] No kite client — skipping OI snapshot.")
+        return
+
+    snapshot = {}   # { "NFO:XXXXX": oi_value }
+    today_str = datetime.now(pytz.timezone("Asia/Kolkata")).date().isoformat()
+
+    try:
+        df_all = get_nfo_instruments(kite)
+        if df_all is None:
+            print("[snapshot] Could not load instruments.")
+            return
+
+        for symbol in ["NIFTY", "BANKNIFTY"]:
+            spot_sym = "NSE:NIFTY 50" if symbol == "NIFTY" else "NSE:NIFTY BANK"
+            try:
+                spot_price = kite.quote([spot_sym])[spot_sym]["last_price"]
+            except Exception as e:
+                print(f"[snapshot] Spot price fetch failed for {symbol}: {e}")
+                continue
+
+            strike_diff = 50 if symbol == "NIFTY" else 100
+            atm_strike  = round(spot_price / strike_diff) * strike_diff
+            strikes     = [atm_strike + i * strike_diff for i in range(-15, 16)]
+
+            df_sym = df_all[(df_all["name"] == symbol) & (df_all["segment"] == "NFO-OPT")]
+            expiries = sorted(df_sym["expiry"].dropna().unique())
+            if not expiries:
+                continue
+
+            # Snapshot nearest expiry only (most relevant for OI change)
+            df_exp = df_sym[df_sym["expiry"] == expiries[0]]
+            df_filt = df_exp[df_exp["strike"].isin(strikes)]
+            opt_syms = ["NFO:" + s for s in df_filt["tradingsymbol"].tolist()]
+
+            try:
+                quotes = kite.quote(opt_syms)
+                for sym, q in quotes.items():
+                    snapshot[sym] = q.get("oi", 0)
+            except Exception as e:
+                print(f"[snapshot] Quote fetch failed for {symbol}: {e}")
+
+        with open(OI_SNAPSHOT_FILE, "w") as f:
+            json.dump({"date": today_str, "data": snapshot}, f)
+
+        print(f"[snapshot] ✅ Saved {len(snapshot)} OI values for {today_str}")
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        print(f"[snapshot] ❌ Error: {e}")
+
+
+def load_oi_snapshot():
+    """
+    Load the OI snapshot saved on the previous trading day.
+    Returns a dict { 'NFO:XXXXX': oi } or empty dict if none/stale.
+    """
+    if not os.path.exists(OI_SNAPSHOT_FILE):
+        return {}
+    try:
+        with open(OI_SNAPSHOT_FILE) as f:
+            data = json.load(f)
+        saved_date_str = data.get("date", "")
+        today_str = datetime.now(pytz.timezone("Asia/Kolkata")).date().isoformat()
+        if saved_date_str == today_str:
+            # Snapshot is from today — it's same-day, not yesterday. Don't use it yet.
+            return {}
+        return data.get("data", {})
+    except Exception as e:
+        print(f"[snapshot] Load error: {e}")
+        return {}
+
+
+def build_oi_baseline(df_filtered, today, opt_quotes):
+    """
+    Establish OI baseline for Change-in-OI calculation.
+    Priority:
+      1. File snapshot from previous trading day (saved at 15:30 by scheduler) ← BEST
+      2. First observed live OI today as intraday session baseline       ← FALLBACK
+    Baseline is NEVER overwritten once set for a symbol.
     """
     global oi_baseline
     if oi_baseline["date"] != today:
-        # New day — clear stale baselines
+        # New day — seed with yesterday's snapshot
         oi_baseline["date"] = today
-        oi_baseline["data"] = {}
+        oi_baseline["data"] = load_oi_snapshot()
+        snap_count = len(oi_baseline["data"])
+        print(f"[oi_baseline] Loaded {snap_count} values from yesterday's snapshot.")
 
-    # Only fetch for symbols not yet baselined
+    # Find symbols still missing a baseline (not in snapshot)
     missing_rows = [
         row for _, row in df_filtered.iterrows()
         if ("NFO:" + row["tradingsymbol"]) not in oi_baseline["data"]
     ]
 
     if not missing_rows:
-        return   # all symbols already have a baseline — nothing to do
+        return   # all symbols already have a baseline
 
-    from datetime import timedelta
-    from_str = (today - timedelta(days=7)).strftime("%Y-%m-%d")
-    to_str   = (today - timedelta(days=1)).strftime("%Y-%m-%d")
-
-    fell_back = 0
+    # Use first-seen live OI as fallback for symbols not in snapshot
     for row in missing_rows:
         sym = "NFO:" + row["tradingsymbol"]
-        # Current live OI is the fallback when historical API is unavailable
-        live_oi = opt_quotes.get(sym, {}).get("oi", 0)
-        try:
-            token = int(row["instrument_token"])
-            hist  = kite.historical_data(token, from_str, to_str, "day", oi=True)
-            if hist:
-                prev_close_oi = hist[-1].get("oi", None)
-                if prev_close_oi is not None and prev_close_oi > 0:
-                    oi_baseline["data"][sym] = prev_close_oi
-                    continue   # ← historical data used; skip fallback
-        except Exception as e:
-            print(f"[oi_baseline] hist failed for {sym}: {e}")
+        oi_baseline["data"][sym] = opt_quotes.get(sym, {}).get("oi", 0)
 
-        # Fallback path: store the very first live OI seen today as baseline
-        oi_baseline["data"][sym] = live_oi
-        fell_back += 1
-
-    print(f"[oi_baseline] {today}: {len(missing_rows)-fell_back} historical, {fell_back} live-fallback")
+    print(f"[oi_baseline] {today}: fallback live-OI for {len(missing_rows)} symbols not in snapshot.")
 
 
 
@@ -202,8 +273,12 @@ def start_scheduler():
     scheduler = BackgroundScheduler(timezone=tz)
     scheduler.add_job(auto_login, "cron", hour=8, minute=45,
                       id="daily_login", replace_existing=True)
+    # Save OI snapshot at 15:30 IST Mon–Fri (market close)
+    scheduler.add_job(save_oi_snapshot, "cron",
+                      hour=15, minute=30, day_of_week="mon-fri",
+                      id="oi_snapshot", replace_existing=True)
     scheduler.start()
-    print("[scheduler] Daily auto-login at 08:45 IST")
+    print("[scheduler] Daily auto-login at 08:45 IST; OI snapshot at 15:30 IST (Mon-Fri)")
 
 # ─────────────────────────────────────────────
 # Helpers
@@ -370,9 +445,9 @@ def api_option_chain():
         opt_syms   = ["NFO:" + s for s in df_filtered["tradingsymbol"].tolist()]
         opt_quotes = kite.quote(opt_syms) if opt_syms else {}
 
-        # ── Build yesterday's OI baseline (once per day, survives cold restart) ──
+        # ── Build OI baseline (snapshot file → live fallback) ──
         today = datetime.now(pytz.timezone("Asia/Kolkata")).date()
-        build_oi_baseline(df_filtered, today, opt_quotes, kite)
+        build_oi_baseline(df_filtered, today, opt_quotes)
 
         chain_data = []
         for strike in target_strikes:

@@ -5,3 +5,6 @@ flask_session/
 *.egg-info/
 dist/
 .venv/
+oi_snapshot.json
+curl_test.json
+curl_debug.json
