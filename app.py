@@ -11,11 +11,12 @@ import pandas as pd
 from flask import Flask, request, redirect, jsonify, render_template, session
 from kiteconnect import KiteConnect
 from dotenv import load_dotenv
+import oi_tracker   # our local SQLite-based OI tracker
 
 load_dotenv()
 
-# File where we persist yesterday's closing OI (written at 15:30 every day)
-OI_SNAPSHOT_FILE = os.path.join(os.path.dirname(__file__), "oi_snapshot.json")
+# Remove legacy JSON snapshot path
+IST = pytz.timezone("Asia/Kolkata")
 
 # ─────────────────────────────────────────────
 # Black-Scholes Greeks  (stdlib only, no scipy)
@@ -99,125 +100,49 @@ ZERODHA_TOTP_SECRET = os.getenv("ZERODHA_TOTP_SECRET")
 _server_access_token = None
 instruments_cache    = {"date": None, "data": None}
 
-# OI baseline: keyed by NFO tradingsymbol, value = previous day's closing OI
-# Rebuilt once per calendar day via Kite historical API (survives cold restarts)
-oi_baseline = {"date": None, "data": {}}   # {"NFO:XXXXX": prev_close_oi}
+# In-memory fallback: tracks first-seen live OI per symbol per day.
+# Used when no 09:15 OPEN snapshot exists in SQLite yet (e.g. first run).
+_intraday_fallback = {"date": None, "data": {}}
 
 
-# ─────────────────────────────────────────────
-# OI Snapshot  (save at 15:30, load next day)
-# ─────────────────────────────────────────────
-def save_oi_snapshot():
+def _seed_intraday_fallback(opt_quotes: dict, intraday_db: dict, today_str: str):
     """
-    Called by the scheduler at 15:30 IST every weekday.
-    Fetches current OI for all NIFTY + BANKNIFTY near-ATM strikes and
-    saves them to oi_snapshot.json as the 'yesterday closing OI' baseline.
+    If there is no 09:15 AM OI snapshot in the DB yet, seed an in-memory
+    fallback baseline using the FIRST observed live OI of today's session.
+    Never overwrites a symbol once seeded.
+    """
+    global _intraday_fallback
+    if _intraday_fallback["date"] != today_str:
+        # New day — reset fallback
+        _intraday_fallback["date"] = today_str
+        _intraday_fallback["data"] = {}
+
+    # Only use fallback when DB snapshot is absent
+    if intraday_db:
+        return  # DB has data — no need for fallback
+
+    for sym, q in opt_quotes.items():
+        if sym not in _intraday_fallback["data"]:
+            _intraday_fallback["data"][sym] = q.get("oi", 0)
+
+
+# ─────────────────────────────────────────────
+# OI Snapshot wrappers  (delegates to oi_tracker)
+# ─────────────────────────────────────────────
+def take_snapshot(label: str):
+    """
+    Called by the scheduler:
+      - 'OPEN' at 09:15 IST  → used for intraday OI change
+      - 'EOD'  at 15:29 IST  → used as next day's overnight baseline
     """
     kite = get_kite_client()
-    if not kite:
-        print("[snapshot] No kite client — skipping OI snapshot.")
+    if kite is None:
+        print(f"[scheduler] No kite session — skipping {label} snapshot.")
         return
-
-    snapshot = {}   # { "NFO:XXXXX": oi_value }
-    today_str = datetime.now(pytz.timezone("Asia/Kolkata")).date().isoformat()
-
-    try:
-        df_all = get_nfo_instruments(kite)
-        if df_all is None:
-            print("[snapshot] Could not load instruments.")
-            return
-
-        for symbol in ["NIFTY", "BANKNIFTY"]:
-            spot_sym = "NSE:NIFTY 50" if symbol == "NIFTY" else "NSE:NIFTY BANK"
-            try:
-                spot_price = kite.quote([spot_sym])[spot_sym]["last_price"]
-            except Exception as e:
-                print(f"[snapshot] Spot price fetch failed for {symbol}: {e}")
-                continue
-
-            strike_diff = 50 if symbol == "NIFTY" else 100
-            atm_strike  = round(spot_price / strike_diff) * strike_diff
-            strikes     = [atm_strike + i * strike_diff for i in range(-15, 16)]
-
-            df_sym = df_all[(df_all["name"] == symbol) & (df_all["segment"] == "NFO-OPT")]
-            expiries = sorted(df_sym["expiry"].dropna().unique())
-            if not expiries:
-                continue
-
-            # Snapshot nearest expiry only (most relevant for OI change)
-            df_exp = df_sym[df_sym["expiry"] == expiries[0]]
-            df_filt = df_exp[df_exp["strike"].isin(strikes)]
-            opt_syms = ["NFO:" + s for s in df_filt["tradingsymbol"].tolist()]
-
-            try:
-                quotes = kite.quote(opt_syms)
-                for sym, q in quotes.items():
-                    snapshot[sym] = q.get("oi", 0)
-            except Exception as e:
-                print(f"[snapshot] Quote fetch failed for {symbol}: {e}")
-
-        with open(OI_SNAPSHOT_FILE, "w") as f:
-            json.dump({"date": today_str, "data": snapshot}, f)
-
-        print(f"[snapshot] ✅ Saved {len(snapshot)} OI values for {today_str}")
-
-    except Exception as e:
-        import traceback; traceback.print_exc()
-        print(f"[snapshot] ❌ Error: {e}")
+    oi_tracker.save_snapshot(kite, label)
 
 
-def load_oi_snapshot():
-    """
-    Load the OI snapshot saved on the previous trading day.
-    Returns a dict { 'NFO:XXXXX': oi } or empty dict if none/stale.
-    """
-    if not os.path.exists(OI_SNAPSHOT_FILE):
-        return {}
-    try:
-        with open(OI_SNAPSHOT_FILE) as f:
-            data = json.load(f)
-        saved_date_str = data.get("date", "")
-        today_str = datetime.now(pytz.timezone("Asia/Kolkata")).date().isoformat()
-        if saved_date_str == today_str:
-            # Snapshot is from today — it's same-day, not yesterday. Don't use it yet.
-            return {}
-        return data.get("data", {})
-    except Exception as e:
-        print(f"[snapshot] Load error: {e}")
-        return {}
 
-
-def build_oi_baseline(df_filtered, today, opt_quotes):
-    """
-    Establish OI baseline for Change-in-OI calculation.
-    Priority:
-      1. File snapshot from previous trading day (saved at 15:30 by scheduler) ← BEST
-      2. First observed live OI today as intraday session baseline       ← FALLBACK
-    Baseline is NEVER overwritten once set for a symbol.
-    """
-    global oi_baseline
-    if oi_baseline["date"] != today:
-        # New day — seed with yesterday's snapshot
-        oi_baseline["date"] = today
-        oi_baseline["data"] = load_oi_snapshot()
-        snap_count = len(oi_baseline["data"])
-        print(f"[oi_baseline] Loaded {snap_count} values from yesterday's snapshot.")
-
-    # Find symbols still missing a baseline (not in snapshot)
-    missing_rows = [
-        row for _, row in df_filtered.iterrows()
-        if ("NFO:" + row["tradingsymbol"]) not in oi_baseline["data"]
-    ]
-
-    if not missing_rows:
-        return   # all symbols already have a baseline
-
-    # Use first-seen live OI as fallback for symbols not in snapshot
-    for row in missing_rows:
-        sym = "NFO:" + row["tradingsymbol"]
-        oi_baseline["data"][sym] = opt_quotes.get(sym, {}).get("oi", 0)
-
-    print(f"[oi_baseline] {today}: fallback live-OI for {len(missing_rows)} symbols not in snapshot.")
 
 
 
@@ -271,14 +196,19 @@ def auto_login():
 def start_scheduler():
     tz = pytz.timezone("Asia/Kolkata")
     scheduler = BackgroundScheduler(timezone=tz)
+    # Auto-login every morning before market opens
     scheduler.add_job(auto_login, "cron", hour=8, minute=45,
                       id="daily_login", replace_existing=True)
-    # Save OI snapshot at 15:30 IST Mon–Fri (market close)
-    scheduler.add_job(save_oi_snapshot, "cron",
-                      hour=15, minute=30, day_of_week="mon-fri",
-                      id="oi_snapshot", replace_existing=True)
+    # Save market-OPEN OI at 09:15 IST → used for intraday OI change during the day
+    scheduler.add_job(lambda: take_snapshot("OPEN"), "cron",
+                      hour=9, minute=15, day_of_week="mon-fri",
+                      id="oi_open_snapshot", replace_existing=True)
+    # Save EOD OI at 15:29 IST → used as next day's overnight baseline
+    scheduler.add_job(lambda: take_snapshot("EOD"), "cron",
+                      hour=15, minute=29, day_of_week="mon-fri",
+                      id="oi_eod_snapshot", replace_existing=True)
     scheduler.start()
-    print("[scheduler] Daily auto-login at 08:45 IST; OI snapshot at 15:30 IST (Mon-Fri)")
+    print("[scheduler] Jobs: login@08:45, OPEN-snapshot@09:15, EOD-snapshot@15:29 (Mon-Fri)")
 
 # ─────────────────────────────────────────────
 # Helpers
@@ -346,8 +276,12 @@ def logout():
 
 @app.route("/api/status")
 def api_status():
-    return jsonify({"auto_login_active": bool(_server_access_token),
-                    "session_active": "access_token" in session})
+    snap = oi_tracker.snapshot_status()
+    return jsonify({
+        "auto_login_active":  bool(_server_access_token),
+        "session_active":     "access_token" in session,
+        "snapshot_status":    snap,
+    })
 
 @app.route("/api/debug-hi")
 def api_debug_hi():
@@ -445,9 +379,19 @@ def api_option_chain():
         opt_syms   = ["NFO:" + s for s in df_filtered["tradingsymbol"].tolist()]
         opt_quotes = kite.quote(opt_syms) if opt_syms else {}
 
-        # ── Build OI baseline (snapshot file → live fallback) ──
-        today = datetime.now(pytz.timezone("Asia/Kolkata")).date()
-        build_oi_baseline(df_filtered, today, opt_quotes)
+        # ── Load baseline dicts from SQLite via oi_tracker ──────────────────
+        # overnight_base : yesterday's EOD OI  → Overnight OI Change
+        # intraday_base  : today's 09:15 OI    → Intraday OI Change
+        expiry_str       = selected_expiry.strftime("%Y-%m-%d")
+        overnight_base   = oi_tracker.get_eod_snapshot(symbol, expiry_str)
+        intraday_base    = oi_tracker.get_open_snapshot(symbol, expiry_str)
+
+        # ── In-memory live session fallback for intraday ──────────────────────
+        # If no 09:15 snapshot yet (e.g. app just started), we track live OI
+        # from first fetch. Stored in a module-level dict so it persists between
+        # requests without being overwritten.
+        today_str = datetime.now(IST).date().isoformat()
+        _seed_intraday_fallback(opt_quotes, intraday_base, today_str)
 
         chain_data = []
         for strike in target_strikes:
@@ -460,19 +404,26 @@ def api_option_chain():
                 if not row.empty:
                     sym = "NFO:" + row.iloc[0]["tradingsymbol"]
                     if sym in opt_quotes:
-                        q    = opt_quotes[sym]
-                        ltp  = round(q.get("last_price", 0), 2)
+                        q        = opt_quotes[sym]
+                        ltp      = round(q.get("last_price", 0), 2)
                         curr_oi  = q.get("oi", 0)
-                        # IMPORTANT: default to None (not curr_oi!) so missing baseline
-                        # doesn't make oi_change silently equal zero
-                        base_oi  = oi_baseline["data"].get(sym, None)
-                        oi_chg   = (curr_oi - base_oi) if base_oi is not None else 0
+
+                        # Overnight OI Change = current OI − yesterday's EOD OI
+                        o_base   = overnight_base.get(sym, None)
+                        o_chg    = (curr_oi - o_base) if o_base is not None else None
+
+                        # Intraday OI Change = current OI − today's 09:15 AM OI
+                        # Falls back to live session baseline if no DB snapshot yet
+                        i_base   = intraday_base.get(sym) or _intraday_fallback["data"].get(sym)
+                        i_chg    = (curr_oi - i_base) if i_base is not None else None
+
                         greeks   = compute_greeks(spot_price, strike, T, ltp, kind)
                         entry[kind] = {
-                            "ltp":       ltp,
-                            "volume":    q.get("volume", 0),
-                            "oi":        curr_oi,
-                            "oi_change": oi_chg,
+                            "ltp":              ltp,
+                            "volume":           q.get("volume", 0),
+                            "oi":               curr_oi,
+                            "oi_change":        o_chg,   # overnight (vs yesterday EOD)
+                            "intraday_oi_chg":  i_chg,   # intraday  (vs 09:15 AM)
                             **(greeks or {}),
                         }
 
@@ -499,6 +450,7 @@ def api_option_chain():
 # ─────────────────────────────────────────────
 # Startup
 # ─────────────────────────────────────────────
+oi_tracker.init_db()   # ensure SQLite tables exist
 auto_login()
 start_scheduler()
 

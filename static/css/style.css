@@ -305,8 +305,34 @@ body {
 .option-table th:nth-child(13) { border-left: 1px solid rgba(255,255,255,0.12); }
 
 
-.oi-change.up { color: #4ade80; }
-.oi-change.dn { color: #f87171; }
+/* ─── OI Change cell (stacked: overnight + intraday) ────────────────── */
+.oi-chg-cell { padding: 0.35rem 0.7rem !important; }
+
+.oi-chg-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 1px;
+}
+
+.oi-overnight {
+    font-size: 0.88rem;
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+.oi-intraday {
+    font-size: 0.72rem;
+    font-weight: 500;
+    opacity: 0.75;
+    line-height: 1.2;
+}
+
+/* Green = OI added / Red = OI shed */
+.oi-up { color: #4ade80; }
+.oi-dn { color: #f87171; }
+
+.na { color: var(--muted); }
 
 /* ─── Max Value Highlights ──────────────────────── */
 /* Highest Volume / OI / ChgOI in CALLs → red tint  */
