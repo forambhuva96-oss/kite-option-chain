@@ -100,40 +100,52 @@ instruments_cache    = {"date": None, "data": None}
 oi_baseline = {"date": None, "data": {}}   # {"NFO:XXXXX": prev_close_oi}
 
 
-def build_oi_baseline(kite, df_filtered, today):
+def build_oi_baseline(df_filtered, today, opt_quotes, kite):
     """
-    Fetch the most-recent trading day's closing OI for each option
-    in df_filtered. Called once per calendar day; skips if already built.
+    Establish an OI baseline to calculate 'OI Change'.
+    Attempts to fetch the previous day's closing OI using Kite's historical API.
+    If the historical API is not subscribed, it gracefully falls back to the
+    first observed LIVE Current OI of the day as the session baseline.
     """
     global oi_baseline
-    if oi_baseline["date"] == today:
-        return  # already fresh
+    if oi_baseline["date"] != today:
+        oi_baseline["date"] = today
+        oi_baseline["data"] = {}
+
+    missing_rows = []
+    for _, row in df_filtered.iterrows():
+        sym = "NFO:" + row["tradingsymbol"]
+        if sym not in oi_baseline["data"]:
+            missing_rows.append(row)
+
+    if not missing_rows:
+        return
 
     from datetime import timedelta
+    from_day = today - timedelta(days=7)
+    prev_day = today - timedelta(days=1)
+    from_str = from_day.strftime("%Y-%m-%d")
+    to_str   = prev_day.strftime("%Y-%m-%d")
 
-    # Walk back to find the last trading weekday (Mon-Fri)
-    prev_day = datetime.now().date() - timedelta(days=1)
-    while prev_day.weekday() >= 5:           # 5=Sat, 6=Sun
-        prev_day -= timedelta(days=1)
-
-    from_str = prev_day.strftime("%Y-%m-%d")
-    to_str   = today.strftime("%Y-%m-%d")
-
-    new_baseline = {}
-    for _, row in df_filtered.iterrows():
+    for row in missing_rows:
+        sym = "NFO:" + row["tradingsymbol"]
+        fallback_oi = opt_quotes.get(sym, {}).get("oi", 0)
         try:
             token = int(row["instrument_token"])
-            sym   = "NFO:" + row["tradingsymbol"]
-            hist  = kite.historical_data(token, from_str, to_str, "day")
-            if hist:
-                new_baseline[sym] = hist[-1].get("oi", 0)   # last completed candle
+            # Essential: pass oi=True to receive the 'oi' key in historical data!
+            hist = kite.historical_data(token, from_str, to_str, "day", oi=True)
+            if hist and len(hist) > 0:
+                oi_baseline["data"][sym] = hist[-1].get("oi", fallback_oi)
+            else:
+                oi_baseline["data"][sym] = fallback_oi
         except Exception as e:
-            print(f"[oi_baseline] {row['tradingsymbol']}: {e}")
-            new_baseline["NFO:" + row["tradingsymbol"]] = 0
+            # Fallback to intraday baseline if Historical Add-on is not active or errors
+            print(f"[oi_baseline] {sym} fallback due to error: {e}")
+            oi_baseline["data"][sym] = fallback_oi
 
-    oi_baseline["data"] = new_baseline
-    oi_baseline["date"] = today
-    print(f"[oi_baseline] Built for {len(new_baseline)} symbols on {today}")
+    print(f"[oi_baseline] Cached {len(missing_rows)} new symbols on {today}")
+
+
 
 
 
@@ -259,6 +271,22 @@ def api_status():
     return jsonify({"auto_login_active": bool(_server_access_token),
                     "session_active": "access_token" in session})
 
+@app.route("/api/debug-hi")
+def api_debug_hi():
+    kite = get_kite_client()
+    if not kite: return jsonify({"error": "No kite"})
+    try:
+        inst = kite.instruments("NFO")
+        token = [i["instrument_token"] for i in inst if i["name"]=="NIFTY" and i["segment"]=="NFO-OPT"][0]
+        from datetime import datetime, timedelta
+        f = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+        t = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        hist = kite.historical_data(token, f, t, "day", oi=True)
+        return jsonify({"token": token, "hist": hist, "f": f, "t": t})
+    except Exception as e:
+        import traceback
+        return jsonify({"error": str(e), "trace": traceback.format_exc()})
+
 
 @app.route("/api/expiries")
 def api_expiries():
@@ -341,7 +369,7 @@ def api_option_chain():
 
         # ── Build yesterday's OI baseline (once per day, survives cold restart) ──
         today = datetime.now(pytz.timezone("Asia/Kolkata")).date()
-        build_oi_baseline(kite, df_filtered, today)
+        build_oi_baseline(df_filtered, today, opt_quotes, kite)
 
         chain_data = []
         for strike in target_strikes:
