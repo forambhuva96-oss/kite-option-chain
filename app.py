@@ -103,47 +103,50 @@ oi_baseline = {"date": None, "data": {}}   # {"NFO:XXXXX": prev_close_oi}
 def build_oi_baseline(df_filtered, today, opt_quotes, kite):
     """
     Establish an OI baseline to calculate 'OI Change'.
-    Attempts to fetch the previous day's closing OI using Kite's historical API.
-    If the historical API is not subscribed, it gracefully falls back to the
-    first observed LIVE Current OI of the day as the session baseline.
+    Tries to fetch the previous trading day's closing OI via Kite's historical API (oi=True).
+    If the Historical Add-on is not subscribed, falls back to the FIRST observed live OI
+    of today's session. The baseline is NEVER overwritten once set for a symbol.
     """
     global oi_baseline
     if oi_baseline["date"] != today:
+        # New day — clear stale baselines
         oi_baseline["date"] = today
         oi_baseline["data"] = {}
 
-    missing_rows = []
-    for _, row in df_filtered.iterrows():
-        sym = "NFO:" + row["tradingsymbol"]
-        if sym not in oi_baseline["data"]:
-            missing_rows.append(row)
+    # Only fetch for symbols not yet baselined
+    missing_rows = [
+        row for _, row in df_filtered.iterrows()
+        if ("NFO:" + row["tradingsymbol"]) not in oi_baseline["data"]
+    ]
 
     if not missing_rows:
-        return
+        return   # all symbols already have a baseline — nothing to do
 
     from datetime import timedelta
-    from_day = today - timedelta(days=7)
-    prev_day = today - timedelta(days=1)
-    from_str = from_day.strftime("%Y-%m-%d")
-    to_str   = prev_day.strftime("%Y-%m-%d")
+    from_str = (today - timedelta(days=7)).strftime("%Y-%m-%d")
+    to_str   = (today - timedelta(days=1)).strftime("%Y-%m-%d")
 
+    fell_back = 0
     for row in missing_rows:
         sym = "NFO:" + row["tradingsymbol"]
-        fallback_oi = opt_quotes.get(sym, {}).get("oi", 0)
+        # Current live OI is the fallback when historical API is unavailable
+        live_oi = opt_quotes.get(sym, {}).get("oi", 0)
         try:
             token = int(row["instrument_token"])
-            # Essential: pass oi=True to receive the 'oi' key in historical data!
-            hist = kite.historical_data(token, from_str, to_str, "day", oi=True)
-            if hist and len(hist) > 0:
-                oi_baseline["data"][sym] = hist[-1].get("oi", fallback_oi)
-            else:
-                oi_baseline["data"][sym] = fallback_oi
+            hist  = kite.historical_data(token, from_str, to_str, "day", oi=True)
+            if hist:
+                prev_close_oi = hist[-1].get("oi", None)
+                if prev_close_oi is not None and prev_close_oi > 0:
+                    oi_baseline["data"][sym] = prev_close_oi
+                    continue   # ← historical data used; skip fallback
         except Exception as e:
-            # Fallback to intraday baseline if Historical Add-on is not active or errors
-            print(f"[oi_baseline] {sym} fallback due to error: {e}")
-            oi_baseline["data"][sym] = fallback_oi
+            print(f"[oi_baseline] hist failed for {sym}: {e}")
 
-    print(f"[oi_baseline] Cached {len(missing_rows)} new symbols on {today}")
+        # Fallback path: store the very first live OI seen today as baseline
+        oi_baseline["data"][sym] = live_oi
+        fell_back += 1
+
+    print(f"[oi_baseline] {today}: {len(missing_rows)-fell_back} historical, {fell_back} live-fallback")
 
 
 
@@ -385,13 +388,16 @@ def api_option_chain():
                         q    = opt_quotes[sym]
                         ltp  = round(q.get("last_price", 0), 2)
                         curr_oi  = q.get("oi", 0)
-                        base_oi  = oi_baseline["data"].get(sym, curr_oi)
+                        # IMPORTANT: default to None (not curr_oi!) so missing baseline
+                        # doesn't make oi_change silently equal zero
+                        base_oi  = oi_baseline["data"].get(sym, None)
+                        oi_chg   = (curr_oi - base_oi) if base_oi is not None else 0
                         greeks   = compute_greeks(spot_price, strike, T, ltp, kind)
                         entry[kind] = {
                             "ltp":       ltp,
                             "volume":    q.get("volume", 0),
                             "oi":        curr_oi,
-                            "oi_change": curr_oi - base_oi,   # real intraday OI δ
+                            "oi_change": oi_chg,
                             **(greeks or {}),
                         }
 
