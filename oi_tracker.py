@@ -19,6 +19,7 @@ import os
 import sqlite3
 import pandas as pd
 import pytz
+import time
 from datetime import datetime, timedelta
 
 # -- Database file lives in the same folder as this script -------------------
@@ -166,16 +167,111 @@ def _last_trading_day(today_date):
     return d
 
 
-def get_eod_snapshot(symbol: str, expiry_str: str | None = None) -> dict:
+def seed_yesterday_eod(kite, symbol: str, expiry_str: str | None = None) -> bool:
+    """
+    Backfills yesterday's EOD OI snapshot by querying Kite's historical_data API.
+    Returns True if successfully seeded, False otherwise.
+    """
+    today     = datetime.now(IST).date()
+    prev_day  = _last_trading_day(today)
+    prev_str  = prev_day.isoformat()
+    
+    print(f"[oi_tracker] Missing EOD baseline for {symbol} on {prev_str}. Starting backfill API fetch...")
+    
+    all_inst = kite.instruments("NFO")
+    df_all   = pd.DataFrame(all_inst)
+    
+    spot_sym = "NSE:NIFTY 50" if symbol == "NIFTY" else "NSE:NIFTY BANK"
+    try:
+        spot_price = kite.quote([spot_sym])[spot_sym]["last_price"]
+    except Exception as e:
+        print(f"[oi_tracker] Spot fetch failed: {e}")
+        return False
+        
+    strike_diff = 50 if symbol == "NIFTY" else 100
+    atm_strike  = round(spot_price / strike_diff) * strike_diff
+    # We only backfill ATM ±10 strikes to save API calls (14 sec total)
+    strikes     = [atm_strike + i * strike_diff for i in range(-10, 11)]
+    
+    df_sym = df_all[(df_all["name"] == symbol) & (df_all["segment"] == "NFO-OPT")]
+    if df_sym.empty: return False
+
+    if expiry_str:
+        from datetime import date
+        try:
+            req_date = date.fromisoformat(expiry_str)
+            df_sym = df_sym[df_sym["expiry"] == req_date]
+        except:
+            pass
+
+    if df_sym.empty: return False
+    
+    expiries = sorted(df_sym["expiry"].dropna().unique())
+    if not expiries: return False
+    target_expiry = expiries[0]
+
+    df_filt = df_sym[(df_sym["expiry"] == target_expiry) & (df_sym["strike"].isin(strikes))]
+    if df_filt.empty: return False
+
+    date_formatted = prev_day.strftime("%Y-%m-%d 00:00:00")
+    
+    rows = []
+    saved_at = datetime.now().isoformat()
+    
+    for _, inst_row in df_filt.iterrows():
+        token = inst_row["instrument_token"]
+        nfo_sym = "NFO:" + inst_row["tradingsymbol"]
+        try:
+            # Respect 3 req/sec kite connect rate limit
+            time.sleep(0.35)
+            hist = kite.historical_data(token, date_formatted, date_formatted, "day", oi=True)
+            if hist and len(hist) > 0:
+                closing_oi = hist[-1].get("oi", 0)
+                if closing_oi > 0:
+                    rows.append((
+                        prev_str,
+                        "EOD",
+                        symbol,
+                        target_expiry.strftime("%Y-%m-%d"),
+                        float(inst_row["strike"]),
+                        inst_row["instrument_type"],
+                        nfo_sym,
+                        int(closing_oi),
+                        saved_at
+                    ))
+        except Exception as e:
+            print(f"[oi_tracker] Hist API error for {nfo_sym}: {e}")
+            break
+
+    if rows:
+        conn = sqlite3.connect(DB_PATH)
+        conn.executemany("""
+            INSERT INTO oi_snapshots
+              (date, label, symbol, expiry, strike, instrument_type, tradingsymbol, oi, saved_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, rows)
+        conn.commit()
+        conn.close()
+        print(f"[oi_tracker] Successfully backfilled {len(rows)} rows for EOD on {prev_str}")
+        return True
+    return False
+
+def get_eod_snapshot(kite, symbol: str, expiry_str: str | None = None) -> dict:
     """
     Return previous trading day's EOD OI as  { 'NFO:XXXXX': oi, ... }
-    Used for: Overnight OI Change = Today's live OI − Yesterday's EOD OI
+    Used for: Daily OI Change = Today's live OI − Yesterday's EOD OI
     """
     from datetime import date
     today     = datetime.now(IST).date()
     prev_day  = _last_trading_day(today)
     prev_str  = prev_day.isoformat()
-    return _load_snapshot(prev_str, "EOD", symbol, expiry_str)
+    data = _load_snapshot(prev_str, "EOD", symbol, expiry_str)
+    
+    if not data and kite is not None:
+        if seed_yesterday_eod(kite, symbol, expiry_str):
+            data = _load_snapshot(prev_str, "EOD", symbol, expiry_str)
+            
+    return data
 
 
 def get_open_snapshot(symbol: str, expiry_str: str | None = None) -> dict:

@@ -413,7 +413,7 @@ def api_option_chain():
         # overnight_base : yesterday's EOD OI  -> Overnight OI Change
         # intraday_base  : today's 09:15 OI    -> Intraday OI Change
         expiry_str       = selected_expiry.strftime("%Y-%m-%d")
-        overnight_base   = oi_tracker.get_eod_snapshot(symbol, expiry_str)
+        overnight_base   = oi_tracker.get_eod_snapshot(kite, symbol, expiry_str)
         intraday_base    = oi_tracker.get_open_snapshot(symbol, expiry_str)
 
         # -- In-memory live session fallback for intraday ----------------------
