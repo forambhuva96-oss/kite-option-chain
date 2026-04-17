@@ -12,7 +12,6 @@ from flask import Flask, request, redirect, jsonify, render_template, session
 from kiteconnect import KiteConnect
 from dotenv import load_dotenv
 import oi_tracker   # our local SQLite-based OI tracker
-import mock_generator # our realistic BS mock data
 
 load_dotenv()
 
@@ -256,8 +255,11 @@ def index():
             return redirect("/")
         except Exception:
             pass
-    # Always show dashboard (falls back to mock if no auth)
-    return render_template("index.html")
+    if _server_access_token or "access_token" in session:
+        return render_template("index.html")
+    return render_template("login.html",
+                           error=request.args.get("error"),
+                           auto_login_enabled=bool(ZERODHA_TOTP_SECRET))
 
 @app.route("/login")
 def login():
@@ -320,15 +322,10 @@ def api_debug_hi():
 @app.route("/api/expiries")
 def api_expiries():
     """Return available expiry dates for a symbol."""
-    symbol = request.args.get("symbol", "NIFTY")
     kite = get_kite_client()
     if not kite:
-        mock_data = mock_generator.get_mock_fallback(symbol)
-        return jsonify({
-            "success": True,
-            "expiries": [e["value"] for e in mock_data["all_expiries"]],
-            "labels": [e["label"] for e in mock_data["all_expiries"]]
-        })
+        return jsonify({"error": "Unauthorized"}), 401
+    symbol = request.args.get("symbol", "NIFTY")
     if symbol not in ["NIFTY", "BANKNIFTY"]:
         return jsonify({"error": "Invalid symbol"}), 400
     df = get_nfo_instruments(kite)
@@ -345,13 +342,13 @@ def api_expiries():
 
 @app.route("/api/option-chain")
 def api_option_chain():
+    kite = get_kite_client()
+    if not kite:
+        return jsonify({"error": "Unauthorized"}), 401
+
     symbol = request.args.get("symbol", "NIFTY")
     if symbol not in ["NIFTY", "BANKNIFTY"]:
         return jsonify({"error": "Invalid symbol"}), 400
-
-    kite = get_kite_client()
-    if not kite:
-        return jsonify(mock_generator.get_mock_fallback(symbol, request.args.get("expiry")))
 
     spot_sym = "NSE:NIFTY 50" if symbol == "NIFTY" else "NSE:NIFTY BANK"
 
@@ -467,8 +464,7 @@ def api_option_chain():
 
     except Exception as e:
         import traceback; traceback.print_exc()
-        print(f"[api_option_chain] Error for {symbol}. Falling back to mock data: {e}")
-        return jsonify(mock_generator.get_mock_fallback(symbol, request.args.get("expiry")))
+        return jsonify({"error": str(e)}), 500
 
 # ---------------------------------------------
 # Startup
