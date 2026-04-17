@@ -175,22 +175,33 @@ def auto_login():
         if r2.json().get("status") != "success":
             print("[auto_login] 2FA step failed:", r2.json().get("message"))
             return False
-        r3 = s.get(f"https://kite.zerodha.com/connect/login?api_key={KITE_API_KEY}&v=3",
-                   allow_redirects=True, timeout=15)
         from urllib.parse import urlparse, parse_qs
-        # The request_token appears in the /callback redirect URL.
-        # We scan the full redirect history + final URL to find it.
         req_token = None
-        for resp in list(r3.history) + [r3]:
-            p = parse_qs(urlparse(resp.url).query)
-            if "request_token" in p:
-                req_token = p["request_token"][0]
-                break
+        
+        try:
+            r3 = s.get(f"https://kite.zerodha.com/connect/login?api_key={KITE_API_KEY}&v=3",
+                       allow_redirects=True, timeout=3)
+            for resp in list(r3.history) + [r3]:
+                p = parse_qs(urlparse(resp.url).query)
+                if "request_token" in p:
+                    req_token = p["request_token"][0]
+                    break
+        except req.exceptions.ReadTimeout as e:
+            # Critical startup deadlock fix:
+            # If the app is currently booting up on Render, hitting its own callback URL
+            # will hang because the server isn't listening yet! We catch the timeout 
+            # and extract the token directly from the URL it was trying to reach.
+            if hasattr(e, 'request') and e.request and e.request.url:
+                p = parse_qs(urlparse(e.request.url).query)
+                if "request_token" in p:
+                    req_token = p["request_token"][0]
+                    print("[auto_login] Extracted token from hanging callback URL to prevent boot deadlock.")
+            
+            if not req_token:
+                raise e
+
         if not req_token:
-            print("[auto_login] Could not extract request_token. Redirect chain:")
-            for resp in r3.history:
-                print("  ->", resp.url)
-            print("  ->", r3.url)
+            print("[auto_login] Could not extract request_token.")
             return False
         kite = KiteConnect(api_key=KITE_API_KEY)
         sess = kite.generate_session(req_token, api_secret=KITE_API_SECRET)
