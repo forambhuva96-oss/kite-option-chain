@@ -143,7 +143,19 @@
             const data = await res.json();
             if (data.success) {
                 renderChain(data);
-                document.getElementById('liveBadge').style.opacity = '1';
+                const badge = document.getElementById('liveBadge');
+                if (data.is_mock) {
+                    badge.textContent = 'Simulated 24/7';
+                    badge.style.background = 'rgba(255, 165, 0, 0.15)';
+                    badge.style.color = '#ffa500';
+                    badge.style.border = '1px solid rgba(255, 165, 0, 0.3)';
+                } else {
+                    badge.textContent = 'Live';
+                    badge.style.background = '';
+                    badge.style.color = '';
+                    badge.style.border = '';
+                }
+                badge.style.opacity = '1';
             } else {
                 console.error('API error:', data.error);
             }
