@@ -3,7 +3,7 @@ services:
     name: kite-option-chain
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app
+    startCommand: gunicorn -b 0.0.0.0:$PORT app:app
     plan: free
     envVars:
       - key: KITE_API_KEY
