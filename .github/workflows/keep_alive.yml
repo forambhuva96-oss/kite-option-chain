@@ -1,0 +1,13 @@
+name: Keep Render App Alive
+
+on:
+  schedule:
+    - cron: '*/10 * * * *' # Runs every 10 minutes
+  workflow_dispatch: # Allows manual trigger
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping the dashboard
+        run: curl -sSf https://kite-option-chain.onrender.com/ > /dev/null || echo "Failed to ping"
