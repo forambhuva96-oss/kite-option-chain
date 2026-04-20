@@ -1,81 +1,263 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NIFTY Option Chain · Nexus Options</title>
-    <meta name="description" content="Real-time NIFTY option chain with Greeks powered by Zerodha Kite API">
-    <link rel="stylesheet" href="/static/css/style.css?v=2.0">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<meta charset="UTF-8">
+<!-- Extremely specific version caching tags mapped here -->
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+
+<title>Option Chain Dashboard</title>
+
+<!-- Included Premium Google Font Base for Aesthetics -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+
+<style>
+body {
+    background-color: #0b0f19; /* Premium Dynamic Dark Mode */
+    color: #c9d1d9;
+    font-family: 'Inter', sans-serif;
+    margin: 0;
+    padding: 20px;
+}
+
+h1 {
+    font-weight: 800;
+    font-size: 2.2em;
+    color: #00ff88;
+    text-align: center;
+    text-shadow: 0 0 20px rgba(0,255,136,0.3);
+}
+
+.auth-notice {
+    text-align: center;
+    background: #151a27;
+    padding: 10px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    border: 1px solid rgba(255,255,255,0.05);
+}
+
+.auth-notice a { color: #00ff88; text-decoration: none; font-weight: bold; }
+.auth-notice a:hover { text-decoration: underline; }
+
+.table-wrapper {
+    overflow-x: auto;
+    border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+    background: #111827; /* Glassmorphic Base */
+    padding: 2px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+th, td {
+    padding: 10px 6px;
+    text-align: center;
+    border: 1px solid rgba(255,255,255,0.05);
+}
+
+th {
+    background-color: #1a2235;
+    color: #ffffff;
+    font-weight: 600;
+    font-size: 0.9em;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* STRIKE COLUMN */
+.strike {
+    background-color: #ff8c00;
+    color: white;
+    font-weight: 800;
+    position: relative;
+}
+
+/* ATM */
+.atm {
+    background-color: #000000 !important;
+    color: #ffffff !important;
+    font-weight: 800;
+    box-shadow: inset 0 0 15px rgba(255,255,255,0.1);
+}
+
+/* ITM (Black text exactly as user provided) */
+.itm {
+    background-color: #fff3b0;
+    color: #000000;
+    font-weight: 600;
+}
+
+/* OTM (Black text exactly as user provided) */
+.otm {
+    background-color: #ffffff;
+    color: #000000;
+}
+
+/* SUPPORT / RESISTANCE (Exact User Specifications) */
+.resistance {
+    background-color: #ff1a1a !important;
+    color: white !important;
+    font-weight: 800;
+    box-shadow: 0 0 15px rgba(255,26,26,0.3);
+}
+
+.support {
+    background-color: #00cc66 !important;
+    color: white !important;
+    font-weight: 800;
+    box-shadow: 0 0 15px rgba(0,204,102,0.3);
+}
+
+/* METRIC HIGHLIGHTS */
+.ce-high {
+    background-color: #00ff88 !important;
+    color: black !important;
+    box-shadow: 0 0 15px rgba(0,255,136,0.3);
+}
+
+.pe-high {
+    background-color: #ff4d4d !important;
+    color: white !important;
+    box-shadow: 0 0 15px rgba(255,77,77,0.3);
+}
+
+/* HOVER (Smooth glass hover) */
+tr:hover td {
+    background-color: rgba(255,255,255,0.05);
+    transition: background-color 0.2s ease;
+}
+</style>
 </head>
+
 <body>
-<div class="dashboard">
 
-    <header class="dash-header glass-panel">
-        <span class="logo-text">⬡ Nexus Options</span>
-        <div class="header-right">
-            <select id="symbolSelect" class="symbol-select">
-                <option value="NIFTY">NIFTY 50</option>
-                <option value="BANKNIFTY">BANK NIFTY</option>
-            </select>
-            <select id="expirySelect" class="symbol-select" title="Select Expiry">
-                <option value="">Expiry…</option>
-            </select>
-            <div class="spot-block">
-                <div class="spot-label">Spot Price</div>
-                <div class="spot-value" id="spotPrice">—</div>
-            </div>
-            <div class="live-dot" id="liveBadge">Live</div>
-            <a href="/logout" class="btn-logout">Logout</a>
-        </div>
-    </header>
+<h1>UPDATED UI LIVE</h1>
+<h2 style="text-align:center;">Option Chain Dashboard</h2>
 
-    <section class="table-card glass-panel">
-        <div class="table-meta">
-            <h2>Option Chain &nbsp;<span class="sub" id="expiryLabel">Loading…</span></h2>
-            <span class="sub">Auto-refresh every 5s</span>
-        </div>
-        <div class="table-scroll">
-            <table class="option-table" id="optionTable">
-                <thead>
-                    <tr>
-                        <th colspan="3" class="ce-head">CALLS — ALGO ENGINE</th>
-                        <th colspan="4" class="ce-head">CALLS DATA</th>
-                        <th class="strike-head">STRIKE</th>
-                        <th colspan="4" class="pe-head">PUTS DATA</th>
-                        <th colspan="3" class="pe-head">PUTS — ALGO ENGINE</th>
-                    </tr>
-                    <tr>
-                        <!-- CALLS ALGO -->
-                        <th class="ce-head greek-h">Action</th>
-                        <th class="ce-head greek-h">Signal</th>
-                        <th class="ce-head greek-h">Strength</th>
-                        <!-- CALLS data -->
-                        <th class="ce-head">OI</th>
-                        <th class="ce-head" title="Top: Momentum OI (Tick)&#10;Bottom: Intraday (vs Morning)">Chg OI<br><span style="font-size:0.65em;opacity:0.7;font-weight:400">Momentum / Intra</span></th>
-                        <th class="ce-head">Volume</th>
-                        <th class="ce-head">LTP</th>
-                        <!-- Strike -->
-                        <th class="strike-head"></th>
-                        <!-- PUTS data -->
-                        <th class="pe-head">LTP</th>
-                        <th class="pe-head">Volume</th>
-                        <th class="pe-head" title="Top: Momentum OI (Tick)&#10;Bottom: Intraday (vs Morning)">Chg OI<br><span style="font-size:0.65em;opacity:0.7;font-weight:400">Momentum / Intra</span></th>
-                        <th class="pe-head">OI</th>
-                        <!-- PUTS ALGO -->
-                        <th class="pe-head greek-h">Strength</th>
-                        <th class="pe-head greek-h">Signal</th>
-                        <th class="pe-head greek-h">Action</th>
-                    </tr>
-                </thead>
-                <tbody id="chainBody">
-                    <tr><td colspan="15" style="text-align:center;padding:2.5rem;color:var(--muted)">Loading market data…</td></tr>
-                </tbody>
-            </table>
-        </div>
-    </section>
-
+<div class="auth-notice" id="authWarning" style="display: none;">
+    Engine Status: <strong style="color:red">Idle/Unauthorized</strong>. -> <a href="/auth">Click Here to Authenticate / Login</a>
 </div>
-<script src="/static/js/script.js?v=4.0"></script>
+
+<div class="table-wrapper">
+    <table id="optionTable">
+        <thead>
+            <tr>
+                <th colspan="3">CALLS (CE)</th>
+                <th>STRIKE</th>
+                <th colspan="3">PUTS (PE)</th>
+            </tr>
+            <tr>
+                <th>OI</th>
+                <th>ΔOI</th>
+                <th>Volume</th>
+                <th>Price</th>
+                <th>Volume</th>
+                <th>ΔOI</th>
+                <th>OI</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+</div>
+
+<script>
+console.log("UPDATED UI LOADED"); // Force logging
+
+async function loadData() {
+    try {
+        const res = await fetch('/api/option-chain?symbol=NIFTY'); // Swapped mapping backend natively
+        if (res.status === 401) {
+            window.location.href = '/auth'; // Redirect cleanly
+            return;
+        }
+
+        const json = await res.json();
+        
+        if (!json.success) {
+            document.getElementById("authWarning").style.display = 'block';
+            return;
+        }
+        document.getElementById("authWarning").style.display = 'none';
+
+        const data = json.chain;
+        const atm = json.atm_strike;
+
+        const table = document.querySelector("#optionTable tbody");
+        table.innerHTML = "";
+
+        // Properly map Python dict values cleanly handling `undefined` bounds
+        let maxCE = Math.max(...data.map(d => d.CE && d.CE.oi != null ? d.CE.oi : -Infinity));
+        let maxPE = Math.max(...data.map(d => d.PE && d.PE.oi != null ? d.PE.oi : -Infinity));
+
+        data.forEach(row => {
+            const tr = document.createElement("tr");
+
+            // ATM row check (Ensure numeric casting securely)
+            const isAtm = Number(row.strike) === Number(atm);
+            if (isAtm) {
+                tr.classList.add("atm");
+            }
+
+            // ITM / OTM logic
+            let ceClass = "";
+            let peClass = "";
+
+            if (Number(row.strike) < Number(atm)) ceClass = "itm";
+            else if (Number(row.strike) > Number(atm)) ceClass = "otm";
+
+            if (Number(row.strike) > Number(atm)) peClass = "itm";
+            else if (Number(row.strike) < Number(atm)) peClass = "otm";
+
+            // Extractor formatting mapping natively
+            const ce_oi = row.CE ? row.CE.oi : 0;
+            const ce_oi_chg = row.CE ? row.CE.intraday_oi_change : 0;
+            const ce_vol = row.CE ? row.CE.volume : 0;
+            const ce_price = row.CE ? row.CE.ltp : 0;
+
+            const pe_oi = row.PE ? row.PE.oi : 0;
+            const pe_oi_chg = row.PE ? row.PE.intraday_oi_change : 0;
+            const pe_vol = row.PE ? row.PE.volume : 0;
+            const pe_price = row.PE ? row.PE.ltp : 0;
+
+            const fmt = (n) => n != null ? n.toLocaleString('en-IN') : '—';
+            
+            // Build Row HTML securely merging classes directly onto elements
+            // We append ATM overrides dynamically via explicit CSS properties on td logic
+            // Note: The prompt explicitly asked to map Resistance and Support logic dynamically
+
+            tr.innerHTML = `
+                <td class="${ce_oi === maxCE && maxCE > -Infinity && !isAtm ? 'resistance ce-high' : isAtm ? '' : ceClass}">
+                    ${fmt(ce_oi)}
+                </td>
+                <td class="${ceClass}">${fmt(ce_oi_chg)}</td>
+                <td class="${ceClass}">${fmt(ce_vol)}</td>
+
+                <td class="strike">${fmt(row.strike)}</td>
+
+                <td class="${peClass}">${fmt(pe_vol)}</td>
+                <td class="${peClass}">${fmt(pe_oi_chg)}</td>
+                <td class="${pe_oi === maxPE && maxPE > -Infinity && !isAtm ? 'support pe-high' : isAtm ? '' : peClass}">
+                    ${fmt(pe_oi)}
+                </td>
+            `;
+
+            table.appendChild(tr);
+        });
+    } catch (err) {
+        console.error("Fetch Data Error:", err);
+    }
+}
+
+setInterval(loadData, 5000);
+loadData();
+</script>
+
 </body>
 </html>

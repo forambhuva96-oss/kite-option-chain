@@ -47,9 +47,22 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="static"), name="static")
-templates = Jinja2Templates(directory="templates")
 
-@app.get("/dashboard", response_class=HTMLResponse)
+templates = Jinja2Templates(directory="templates")
+# Natively disable template caching on disk explicitly
+templates.env.auto_reload = True
+templates.env.cache = None
+
+@app.middleware("http")
+async def disable_caching(request: Request, call_next):
+    # Brutalizes any Render/CDN caching mechanisms globally ensuring live HTTP flows
+    response = await call_next(request)
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+@app.get("/", response_class=HTMLResponse)
 async def serve_dashboard(request: Request):
     return templates.TemplateResponse(
         request=request,
@@ -57,7 +70,7 @@ async def serve_dashboard(request: Request):
         context={}
     )
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/auth", response_class=HTMLResponse)
 async def serve_mobile_controller(request: Request):
     status = background_task.get_system_status()
     # Pull KITE_API_KEY directly from environment for frontend integration
