@@ -73,7 +73,11 @@ async def _poll_option_chain(access_token: str):
             opt_quotes = await asyncio.to_thread(kite.quote, opt_syms) if opt_syms else {}
 
             expiry_str = nearest_expiry.strftime("%Y-%m-%d")
-            overnight_base = await asyncio.to_thread(oi_tracker.get_eod_snapshot, kite, "NIFTY", expiry_str)
+            open_base = await asyncio.to_thread(oi_tracker.get_open_snapshot, "NIFTY", expiry_str)
+            if not open_base:
+                print("[Task] Initializing today's baseline OI...")
+                await asyncio.to_thread(oi_tracker.save_snapshot, kite, "OPEN")
+                open_base = await asyncio.to_thread(oi_tracker.get_open_snapshot, "NIFTY", expiry_str)
 
             chain_data = []
             now_time = datetime.now(IST).strftime("%H:%M:%S")
@@ -89,8 +93,9 @@ async def _poll_option_chain(access_token: str):
                             ltp = q.get("last_price", 0)
                             curr_oi = q.get("oi", 0)
                             
-                            o_base = overnight_base.get(sym, None)
-                            o_chg = (curr_oi - o_base) if o_base is not None else None
+                            o_base = open_base.get(sym)
+                            baseline_oi = o_base if o_base is not None else curr_oi
+                            o_chg = curr_oi - baseline_oi
                             
                             entry[kind] = {
                                 "ltp": ltp,
