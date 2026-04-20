@@ -96,6 +96,50 @@
             background-color: var(--primary-hover);
         }
 
+        .btn-zerodha {
+            display: block;
+            width: 100%;
+            padding: 16px;
+            border-radius: 8px;
+            background-color: #ff5722;
+            color: white;
+            font-size: 16px;
+            font-weight: 600;
+            text-align: center;
+            text-decoration: none;
+            box-sizing: border-box;
+            transition: background-color 0.2s, opacity 0.2s;
+            margin-bottom: 20px;
+        }
+        
+        .btn-zerodha:hover {
+            background-color: #f4511e;
+        }
+
+        .btn-zerodha.disabled {
+            opacity: 0.7;
+            pointer-events: none;
+        }
+
+        .divider {
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 13px;
+            margin: 24px 0;
+            position: relative;
+        }
+        
+        .divider::before, .divider::after {
+            content: "";
+            position: absolute;
+            top: 50%;
+            width: 35%;
+            height: 1px;
+            background-color: var(--border);
+        }
+        .divider::before { left: 0; }
+        .divider::after { right: 0; }
+
         #status-box {
             margin-top: 20px;
             padding: 12px;
@@ -149,7 +193,13 @@
         </div>
 
         <h1>Backend Controller</h1>
-        <p class="subtitle">Paste your Zerodha Kite request_token below to boot up the Option Chain fetching sequence.</p>
+        <p class="subtitle">Log in to instantiate your automated background process seamlessly.</p>
+
+        {% if not active %}
+            <a href="https://kite.trade/connect/login?api_key={{ kite_api_key }}&v=3" class="btn-zerodha" id="zerodha-btn">Auth with Zerodha</a>
+            
+            <div class="divider">OR PASTE TOKEN MANUALLY</div>
+        {% endif %}
 
         <form id="token-form">
             <div class="form-group">
@@ -162,14 +212,16 @@
     </div>
 
     <script>
-        document.getElementById('token-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            const btn = document.getElementById('submit-btn');
-            const token = document.getElementById('request_token').value;
-            const statusBox = document.getElementById('status-box');
-            
-            btn.textContent = 'Authenticating...';
+        const btn = document.getElementById('submit-btn');
+        const tokenInput = document.getElementById('request_token');
+        const statusBox = document.getElementById('status-box');
+        const form = document.getElementById('token-form');
+        const zerodhaBtn = document.getElementById('zerodha-btn');
+
+        // Function wrapper for logging processing
+        async function processTokenSubmission(token) {
+            if (zerodhaBtn) zerodhaBtn.classList.add('disabled');
+            btn.textContent = 'Starting system...';
             btn.style.opacity = '0.7';
             btn.disabled = true;
             statusBox.style.display = 'none';
@@ -181,9 +233,7 @@
 
                 const response = await fetch('/login', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                    },
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                     body: formData
                 });
 
@@ -192,23 +242,57 @@
                 statusBox.style.display = 'block';
                 if (data.status === 'success') {
                     statusBox.classList.add('success');
-                    statusBox.textContent = '✅ System Started Successfully!';
-                    document.getElementById('request_token').value = ''; // clear
+                    statusBox.textContent = '✅ Login Successful. System Started.';
+                    tokenInput.value = ''; // clean logic
                     setTimeout(() => window.location.reload(), 1500);
                 } else {
                     statusBox.classList.add('error');
                     statusBox.textContent = '❌ ' + data.message;
-                    btn.textContent = 'Start System';
-                    btn.style.opacity = '1';
-                    btn.disabled = false;
+                    resetUI();
                 }
             } catch (err) {
                 statusBox.style.display = 'block';
                 statusBox.classList.add('error');
                 statusBox.textContent = '❌ Network error communicating with backend.';
-                btn.textContent = 'Start System';
-                btn.style.opacity = '1';
-                btn.disabled = false;
+                resetUI();
+            }
+        }
+
+        function resetUI() {
+            btn.textContent = 'Start System';
+            btn.style.opacity = '1';
+            btn.disabled = false;
+            if (zerodhaBtn) zerodhaBtn.classList.remove('disabled');
+        }
+
+        // Standard Manual Paste Submissions
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            processTokenSubmission(tokenInput.value);
+        });
+
+        // NATIVE AUTOMATION: URL Parameter Trapping
+        document.addEventListener("DOMContentLoaded", () => {
+            const params = new URLSearchParams(window.location.search);
+            const reqToken = params.get('request_token');
+            const authStatus = params.get('status');
+
+            if (authStatus === "success" && reqToken) {
+                // Auto-fill input
+                tokenInput.value = reqToken;
+                
+                // Pure cleanup - strip url so refreshing doesnt spam /login
+                window.history.replaceState({}, document.title, window.location.pathname);
+                
+                // Blast the token locally
+                processTokenSubmission(reqToken);
+            } 
+            else if (authStatus && authStatus !== "success") {
+                statusBox.style.display = 'block';
+                statusBox.classList.add('error');
+                statusBox.textContent = '❌ Login failed or cancelled';
+                // Strip
+                window.history.replaceState({}, document.title, window.location.pathname);
             }
         });
     </script>

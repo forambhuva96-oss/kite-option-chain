@@ -38,11 +38,17 @@ templates = Jinja2Templates(directory="templates")
 @app.get("/", response_class=HTMLResponse)
 async def serve_mobile_controller(request: Request):
     status = background_task.get_system_status()
-    return templates.TemplateResponse("mobile_login.html", {
-        "request": request, 
-        "active": status["active"],
-        "last_updated": status["last_updated"]
-    })
+    # Pull KITE_API_KEY directly from environment for frontend integration
+    kite_api_key = os.getenv("KITE_API_KEY", "")
+    return templates.TemplateResponse(
+        request=request,
+        name="mobile_login.html", 
+        context={
+            "active": status["active"],
+            "last_updated": status["last_updated"],
+            "kite_api_key": kite_api_key
+        }
+    )
 
 @app.post("/login")
 async def process_login(request_token: str = Form(...)):
