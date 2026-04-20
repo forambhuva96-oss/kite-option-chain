@@ -2,7 +2,6 @@ import os
 import math
 import json
 import secrets
-import pyotp
 import requests as req
 from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -93,11 +92,7 @@ app.config["SESSION_COOKIE_SECURE"] = os.environ.get("RENDER") is not None
 
 KITE_API_KEY        = os.getenv("KITE_API_KEY")
 KITE_API_SECRET     = os.getenv("KITE_API_SECRET")
-ZERODHA_USER_ID     = os.getenv("ZERODHA_USER_ID")
-ZERODHA_PASSWORD    = os.getenv("ZERODHA_PASSWORD")
-ZERODHA_TOTP_SECRET = os.getenv("ZERODHA_TOTP_SECRET")
 
-_server_access_token = None
 instruments_cache    = {"date": None, "data": None}
 
 # In-memory fallback: tracks first-seen live OI per symbol per day.
@@ -148,77 +143,9 @@ def take_snapshot(label: str):
 
 
 
-# ---------------------------------------------
-# Auto-login (TOTP)
-# ---------------------------------------------
-def auto_login():
-    global _server_access_token
-    if not all([ZERODHA_USER_ID, ZERODHA_PASSWORD, ZERODHA_TOTP_SECRET]):
-        print("[auto_login] Credentials not set - skipping.")
-        return False
-    try:
-        print("[auto_login] Starting automated login...")
-        s = req.Session()
-        r1 = s.post("https://kite.zerodha.com/api/login",
-                    data={"user_id": ZERODHA_USER_ID, "password": ZERODHA_PASSWORD},
-                    timeout=15)
-        data1 = r1.json()
-        if data1.get("status") != "success":
-            print("[auto_login] Password step failed:", data1.get("message"))
-            return False
-        totp = pyotp.TOTP(ZERODHA_TOTP_SECRET).now()
-        r2 = s.post("https://kite.zerodha.com/api/twofa",
-                    data={"user_id": ZERODHA_USER_ID,
-                          "request_id": data1["data"]["request_id"],
-                          "twofa_value": totp, "twofa_type": "totp"},
-                    timeout=15)
-        if r2.json().get("status") != "success":
-            print("[auto_login] 2FA step failed:", r2.json().get("message"))
-            return False
-        from urllib.parse import urlparse, parse_qs
-        req_token = None
-        
-        try:
-            r3 = s.get(f"https://kite.zerodha.com/connect/login?api_key={KITE_API_KEY}&v=3",
-                       allow_redirects=True, timeout=3)
-            for resp in list(r3.history) + [r3]:
-                p = parse_qs(urlparse(resp.url).query)
-                if "request_token" in p:
-                    req_token = p["request_token"][0]
-                    break
-        except req.exceptions.ReadTimeout as e:
-            # Critical startup deadlock fix:
-            # If the app is currently booting up on Render, hitting its own callback URL
-            # will hang because the server isn't listening yet! We catch the timeout 
-            # and extract the token directly from the URL it was trying to reach.
-            if hasattr(e, 'request') and e.request and e.request.url:
-                p = parse_qs(urlparse(e.request.url).query)
-                if "request_token" in p:
-                    req_token = p["request_token"][0]
-                    print("[auto_login] Extracted token from hanging callback URL to prevent boot deadlock.")
-            
-            if not req_token:
-                raise e
-
-        if not req_token:
-            print("[auto_login] Could not extract request_token.")
-            return False
-        kite = KiteConnect(api_key=KITE_API_KEY)
-        sess = kite.generate_session(req_token, api_secret=KITE_API_SECRET)
-        _server_access_token = sess["access_token"]
-        print(f"[auto_login] OK - Done at {datetime.now().strftime('%H:%M:%S')}")
-        return True
-    except Exception as e:
-        import traceback; traceback.print_exc()
-        print("[auto_login] FAILED:", str(e))
-        return False
-
 def start_scheduler():
     tz = pytz.timezone("Asia/Kolkata")
     scheduler = BackgroundScheduler(timezone=tz)
-    # Auto-login every morning before market opens
-    scheduler.add_job(auto_login, "cron", hour=8, minute=45,
-                      id="daily_login", replace_existing=True)
     # Save market-OPEN OI at 09:15 IST -> used for intraday OI change during the day
     scheduler.add_job(lambda: take_snapshot("OPEN"), "cron",
                       hour=9, minute=15, day_of_week="mon-fri",
@@ -228,14 +155,12 @@ def start_scheduler():
                       hour=15, minute=29, day_of_week="mon-fri",
                       id="oi_eod_snapshot", replace_existing=True)
     scheduler.start()
-    print("[scheduler] Jobs: login@08:45, OPEN-snapshot@09:15, EOD-snapshot@15:29 (Mon-Fri)")
+    print("[scheduler] Jobs: OPEN-snapshot@09:15, EOD-snapshot@15:29 (Mon-Fri)")
 
 # ---------------------------------------------
 # Helpers
 # ---------------------------------------------
 def get_kite_client():
-    if _server_access_token:
-        return KiteConnect(api_key=KITE_API_KEY, access_token=_server_access_token)
     if "access_token" in session:
         return KiteConnect(api_key=KITE_API_KEY, access_token=session["access_token"])
     return None
@@ -266,11 +191,9 @@ def index():
             return redirect("/")
         except Exception:
             pass
-    if _server_access_token or "access_token" in session:
+    if "access_token" in session:
         return render_template("index.html")
-    return render_template("login.html",
-                           error=request.args.get("error"),
-                           auto_login_enabled=bool(ZERODHA_TOTP_SECRET))
+    return render_template("login.html", error=request.args.get("error"))
 
 @app.route("/login")
 def login():
@@ -298,19 +221,8 @@ def logout():
 def api_status():
     snap = oi_tracker.snapshot_status()
     return jsonify({
-        "auto_login_active":  bool(_server_access_token),
         "session_active":     "access_token" in session,
         "snapshot_status":    snap,
-    })
-
-@app.route("/api/force-login")
-def api_force_login():
-    """Trigger auto-login immediately. Useful on first start / token expiry."""
-    result = auto_login()
-    return jsonify({
-        "success": result,
-        "token_active": bool(_server_access_token),
-        "message": "Login successful" if result else "Login failed - check credentials/TOTP"
     })
 
 @app.route("/api/debug-hi")
@@ -470,7 +382,6 @@ def api_option_chain():
                 for e in expiries[:10]
             ],
             "chain":      chain_data,
-            "auto_login": bool(_server_access_token),
         })
 
     except Exception as e:
@@ -481,7 +392,6 @@ def api_option_chain():
 # Startup
 # ---------------------------------------------
 oi_tracker.init_db()   # ensure SQLite tables exist
-auto_login()
 start_scheduler()
 
 if __name__ == "__main__":
