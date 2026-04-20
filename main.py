@@ -49,18 +49,6 @@ app = FastAPI(lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 templates = Jinja2Templates(directory="templates")
-# Natively disable template caching on disk explicitly
-templates.env.auto_reload = True
-templates.env.cache = None
-
-@app.middleware("http")
-async def disable_caching(request: Request, call_next):
-    # Brutalizes any Render/CDN caching mechanisms globally ensuring live HTTP flows
-    response = await call_next(request)
-    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-    response.headers["Pragma"] = "no-cache"
-    response.headers["Expires"] = "0"
-    return response
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_dashboard(request: Request):
@@ -147,5 +135,6 @@ async def api_health_check():
     }
 
 if __name__ == "__main__":
-    # Natively standardizes booting on absolutely explicitly 8000
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)
+    # Dynamically detect PORT for Render/local flexibility
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)

@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: kite-algo-engine-v2
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: PYTHON_VERSION
+        value: 3.10.0
+      - key: KITE_API_KEY
+        sync: false
+      - key: KITE_API_SECRET
+        sync: false
+      - key: ZERODHA_USER_ID
+        sync: false
+      - key: ZERODHA_PASSWORD
+        sync: false
+      - key: ZERODHA_TOTP_SECRET
+        sync: false
+      - key: DEFAULT_OI_THRESH
+        value: "4000"
+      - key: DEFAULT_PX_THRESH
+        value: "0.5"
+      - key: HIGH_VOL_OI_THRESH
+        value: "8000"
+      - key: HIGH_VOL_PX_THRESH
+        value: "1.0"
+      - key: LOW_VOL_OI_THRESH
+        value: "7000"
+      - key: LOW_VOL_PX_THRESH
+        value: "0.8"
