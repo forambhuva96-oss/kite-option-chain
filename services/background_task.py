@@ -35,7 +35,7 @@ def get_system_status() -> dict:
     }
 
 async def _poll_option_chain(access_token: str):
-    print("[Task] Background polling started.")
+    print("Background Task Running")
     kite = get_kite_client(access_token)
     
     try:

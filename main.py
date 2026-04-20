@@ -15,7 +15,7 @@ load_dotenv()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("[Lifespan] Booting up Application...")
+    print("Server Started")
     
     # 1. Initialize DB safely
     await asyncio.to_thread(oi_tracker.init_db)
@@ -23,7 +23,7 @@ async def lifespan(app: FastAPI):
     # 2. Check Auto-Resume Capability
     saved_token = kite_auth.load_saved_token()
     if saved_token:
-        print("[Lifespan] Found saved access_token. System auto-resumed.")
+        print("System Auto-Resumed")
         background_task.start_polling(saved_token)
     else:
         print("[Lifespan] No active token found. Awaiting mobile login.")
@@ -53,7 +53,7 @@ async def process_login(request_token: str = Form(...)):
         # Enforce purely isolated looping thread logic natively
         background_task.start_polling(token)
         
-        print("[System] Success - Backend Thread initiated seamlessly.")
+        print("Login Successful")
         return JSONResponse({"status": "success", "message": "System Started Successfully!"})
         
     except Exception as e:
@@ -76,7 +76,7 @@ async def api_get_data():
 async def api_health_check():
     status = background_task.get_system_status()
     return {
-        "status": "healthy",
+        "status": "running" if status["active"] else "idle",
         "system_active": status["active"],
         "last_ping": status["last_updated"]
     }
