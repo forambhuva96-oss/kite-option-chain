@@ -4,6 +4,7 @@ import uvicorn
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 import logging
@@ -45,7 +46,12 @@ async def lifespan(app: FastAPI):
     background_task.stop_polling()
 
 app = FastAPI(lifespan=lifespan)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
+
+@app.get("/dashboard", response_class=HTMLResponse)
+async def serve_dashboard(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_mobile_controller(request: Request):
@@ -90,6 +96,29 @@ async def api_get_data():
     if data.get("status") == "error":
         return JSONResponse(data, status_code=400)
     return data
+
+@app.get("/api/option-chain")
+async def api_option_chain_frontend(symbol: str = "NIFTY", expiry: str = None):
+    # Native bridge converting Algorithmic backend to the specific Dashboard Javascript format
+    backend_val = background_task.get_latest_data()
+    
+    if backend_val.get("status") == "error":
+        return {"success": False, "error": "System not running"}
+
+    # Extract dynamic root metrics naturally attached to state in background_task
+    # (Since background_task.STATE just returns 'data', I will map it perfectly)
+    data_list = backend_val.get("data", [])
+    if not data_list:
+        return {"success": False, "error": "No chain data natively cached yet"}
+    
+    return {
+        "success": True,
+        "spot_price": backend_val.get("spot_price", 0),
+        "atm_strike": backend_val.get("atm_strike", 0),
+        "expiry": backend_val.get("expiry", "Unknown"),
+        "all_expiries": backend_val.get("all_expiries", []),
+        "chain": data_list
+    }
 
 @app.get("/health")
 async def api_health_check():

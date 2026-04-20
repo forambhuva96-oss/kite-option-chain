@@ -30,6 +30,10 @@ def get_latest_data() -> dict:
         "status": "success",
         "timestamp": STATE["last_updated"],
         "data": STATE["latest_data"],
+        "spot_price": STATE.get("spot_price", 0),
+        "atm_strike": STATE.get("atm_strike", 0),
+        "expiry": STATE.get("expiry", "Unknown"),
+        "all_expiries": STATE.get("all_expiries", []),
         "system_state": STATE["status"]
     }
 
@@ -206,6 +210,10 @@ async def _poll_option_chain(access_token: str):
 
             STATE["latest_data"] = chain_data
             STATE["last_updated"] = now_time
+            STATE["spot_price"] = spot_price
+            STATE["atm_strike"] = atm_strike
+            STATE["expiry"] = expiry_str
+            STATE["all_expiries"] = [{"label": e.strftime("%d %b %Y"), "value": e.strftime("%Y-%m-%d")} for e in expiries[:5]]
 
         except Exception as e:
             err_str = str(e).lower()
