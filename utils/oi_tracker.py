@@ -43,6 +43,18 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_lookup
         ON oi_snapshots (date, label, symbol, expiry, strike, instrument_type)
     """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS signal_history (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp       TEXT NOT NULL,
+            strike          REAL NOT NULL,
+            oi              INTEGER NOT NULL,
+            price           REAL NOT NULL,
+            signal          TEXT NOT NULL,
+            strength        TEXT NOT NULL,
+            action          TEXT NOT NULL
+        )
+    """)
     conn.commit()
     conn.close()
     print("[oi_tracker] DB ready:", DB_PATH)
@@ -229,3 +241,19 @@ def snapshot_status() -> dict:
     }
     conn.close()
     return result
+
+def save_signal_snapshot(records: list):
+    """
+    Records is a list of tuples:
+    (timestamp, strike, oi, price, signal, strength, action)
+    """
+    if not records:
+        return
+    conn = sqlite3.connect(DB_PATH)
+    conn.executemany("""
+        INSERT INTO signal_history
+          (timestamp, strike, oi, price, signal, strength, action)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, records)
+    conn.commit()
+    conn.close()
