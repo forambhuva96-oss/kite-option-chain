@@ -1,9 +1,10 @@
 kiteconnect
 python-dotenv
-flask
+fastapi
+uvicorn
+jinja2
+python-multipart
 requests
 pandas
-gunicorn
-pyotp
-apscheduler
 pytz
+pyotp
