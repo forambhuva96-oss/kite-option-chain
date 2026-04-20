@@ -6,6 +6,18 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
+import logging
+
+os.makedirs('logs', exist_ok=True)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("logs/app.log"),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger("app")
 
 from services import kite_auth
 from services import background_task
@@ -15,7 +27,7 @@ load_dotenv()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("Server Started")
+    logger.info("Server Started")
     
     # 1. Initialize DB safely
     await asyncio.to_thread(oi_tracker.init_db)
@@ -23,13 +35,13 @@ async def lifespan(app: FastAPI):
     # 2. Check Auto-Resume Capability
     saved_token = kite_auth.load_saved_token()
     if saved_token:
-        print("System Auto-Resumed")
+        logger.info("System Auto-Resumed")
         background_task.start_polling(saved_token)
     else:
-        print("[Lifespan] No active token found. Awaiting mobile login.")
+        logger.info("[Lifespan] No active token found. Awaiting mobile login.")
 
     yield
-    print("[Lifespan] Shutting down gracefully...")
+    logger.info("[Lifespan] Shutting down gracefully...")
     background_task.stop_polling()
 
 app = FastAPI(lifespan=lifespan)
@@ -45,6 +57,7 @@ async def serve_mobile_controller(request: Request):
         name="mobile_login.html", 
         context={
             "active": status["active"],
+            "system_state": status["status"],
             "last_updated": status["last_updated"],
             "kite_api_key": kite_api_key
         }
@@ -59,11 +72,11 @@ async def process_login(request_token: str = Form(...)):
         # Enforce purely isolated looping thread logic natively
         background_task.start_polling(token)
         
-        print("Login Successful")
+        logger.info("Login Successful")
         return JSONResponse({"status": "success", "message": "System Started Successfully!"})
         
     except Exception as e:
-        print("[System] Login failed:", str(e))
+        logger.error(f"[System] Login failed: {str(e)}")
         return JSONResponse({"status": "error", "message": str(e)}, status_code=400)
 
 @app.post("/stop")
@@ -82,7 +95,7 @@ async def api_get_data():
 async def api_health_check():
     status = background_task.get_system_status()
     return {
-        "status": "running" if status["active"] else "idle",
+        "status": status["status"],
         "system_active": status["active"],
         "last_ping": status["last_updated"]
     }
