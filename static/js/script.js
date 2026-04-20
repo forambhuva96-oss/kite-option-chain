@@ -149,10 +149,12 @@
                 document.getElementById('liveBadge').style.opacity = '1';
             } else {
                 console.error('API error:', data.error);
+                chainBody.innerHTML = `<tr><td colspan="15" style="text-align:center;padding:2.5rem;color:var(--danger)">[SYSTEM ERROR]: ${data.error}<br><br><a href="/" style="color:var(--primary); text-decoration:underline;">Click Here to Authenticate / Start Engine</a></td></tr>`;
             }
         } catch (err) {
             console.error('Fetch error:', err);
             document.getElementById('liveBadge').style.opacity = '0.4';
+            chainBody.innerHTML = `<tr><td colspan="15" style="text-align:center;padding:2.5rem;color:var(--danger)">[NETWORK ERROR]: Cannot reach backend. Please wait...</td></tr>`;
         }
     }
 

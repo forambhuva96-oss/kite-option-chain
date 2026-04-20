@@ -265,27 +265,27 @@ body {
 }
 
 .atm-row .strike-cell {
-    background: rgba(11, 94, 215, 0.4);
-    color: white;
+    background: #ffffff;
+    color: #000000;
 }
 .atm-row .strike-cell::after {
     content: ' ◆ ATM';
     font-size: 0.65rem;
-    font-weight: 700;
-    color: white;
+    font-weight: 800;
+    color: #000000;
 }
 
-/* Bold blue styling on entire ATM row with subtle glow */
+/* Bold white styling on entire ATM row */
 .atm-row td {
-    background-color: #007bff !important;
-    color: white !important;
+    background-color: #ffffff !important;
+    color: #000000 !important;
     font-weight: bold !important;
-    box-shadow: 0 0 12px rgba(0,123,255,0.4) !important;
-    border-top: 1px solid #3b82f6 !important;
-    border-bottom: 1px solid #3b82f6 !important;
+    box-shadow: 0 0 15px rgba(255,255,255,0.5) !important;
+    border-top: 1px solid #ffffff !important;
+    border-bottom: 1px solid #ffffff !important;
 }
 .atm-row .strike-cell {
-    background-color: #0b5ed7 !important;
+    background-color: #f1f5f9 !important;
 }
 
 /* ITM Logic */
