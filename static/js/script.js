@@ -91,6 +91,9 @@
             const isAtm = row.strike === data.atm_strike;
             const ceItm = row.strike < data.atm_strike;
             const peItm = row.strike > data.atm_strike;
+            
+            const ceState = ceItm ? 'itm' : 'otm';
+            const peState = peItm ? 'itm' : 'otm';
             const ce = row.CE, pe = row.PE;
 
             const hlCls = (side, field, d) => {
@@ -106,26 +109,26 @@
             html += `<tr${isAtm ? ' class="atm-row"' : ''}>`;
 
             // CALLS: Greeks | OI | ChgOI | Volume | LTP
-            html += td(ce?.iv    != null ? fmtP(ce.iv)       : '—', [ceItm?'ce-itm':null,'greek']);
-            html += td(ce?.delta != null ? fmtP(ce.delta, 3) : '—', [ceItm?'ce-itm':null,'greek']);
-            html += td(ce?.theta != null ? fmtP(ce.theta)    : '—', [ceItm?'ce-itm':null,'greek']);
-            html += td(ce ? fmt(ce.oi) : '—',     [ceItm?'ce-itm':null, hlCls('CE','oi',ce)]);
+            html += td(ce?.iv    != null ? fmtP(ce.iv)       : '—', [ceState,'greek']);
+            html += td(ce?.delta != null ? fmtP(ce.delta, 3) : '—', [ceState,'greek']);
+            html += td(ce?.theta != null ? fmtP(ce.theta)    : '—', [ceState,'greek']);
+            html += td(ce ? fmt(ce.oi) : '—',     [ceState, hlCls('CE','oi',ce)]);
             // OI change cell (overnight + intraday stacked)
             html += oiChangeTd(ce?.oi_change, ce?.intraday_oi_chg, 'CE', ceItm, mx);
-            html += td(ce ? fmt(ce.volume) : '—', [ceItm?'ce-itm':null, hlCls('CE','volume',ce)]);
-            html += td(ce ? fmtP(ce.ltp)   : '—', [ceItm?'ce-itm':null,'ltp']);
+            html += td(ce ? fmt(ce.volume) : '—', [ceState, hlCls('CE','volume',ce)]);
+            html += td(ce ? fmtP(ce.ltp)   : '—', [ceState,'ltp']);
 
             // STRIKE
             html += `<td class="strike-cell">${fmt(row.strike)}</td>`;
 
             // PUTS: LTP | Volume | ChgOI | OI | Greeks
-            html += td(pe ? fmtP(pe.ltp)   : '—', [peItm?'pe-itm':null,'ltp']);
-            html += td(pe ? fmt(pe.volume) : '—', [peItm?'pe-itm':null, hlCls('PE','volume',pe)]);
+            html += td(pe ? fmtP(pe.ltp)   : '—', [peState,'ltp']);
+            html += td(pe ? fmt(pe.volume) : '—', [peState, hlCls('PE','volume',pe)]);
             html += oiChangeTd(pe?.oi_change, pe?.intraday_oi_chg, 'PE', peItm, mx);
-            html += td(pe ? fmt(pe.oi) : '—',     [peItm?'pe-itm':null, hlCls('PE','oi',pe)]);
-            html += td(pe?.iv    != null ? fmtP(pe.iv)       : '—', [peItm?'pe-itm':null,'greek']);
-            html += td(pe?.delta != null ? fmtP(pe.delta, 3) : '—', [peItm?'pe-itm':null,'greek']);
-            html += td(pe?.theta != null ? fmtP(pe.theta)    : '—', [peItm?'pe-itm':null,'greek']);
+            html += td(pe ? fmt(pe.oi) : '—',     [peState, hlCls('PE','oi',pe)]);
+            html += td(pe?.iv    != null ? fmtP(pe.iv)       : '—', [peState,'greek']);
+            html += td(pe?.delta != null ? fmtP(pe.delta, 3) : '—', [peState,'greek']);
+            html += td(pe?.theta != null ? fmtP(pe.theta)    : '—', [peState,'greek']);
 
             html += '</tr>';
         });

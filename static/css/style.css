@@ -265,25 +265,41 @@ body {
 }
 
 .atm-row .strike-cell {
-    background: rgba(234,179,8,0.25);
-    color: #fbbf24;
+    background: rgba(11, 94, 215, 0.4);
+    color: white;
 }
 .atm-row .strike-cell::after {
     content: ' ◆ ATM';
     font-size: 0.65rem;
     font-weight: 700;
-    color: #fbbf24;
+    color: white;
 }
 
-/* Bold gold border on entire ATM row */
+/* Bold blue styling on entire ATM row with subtle glow */
 .atm-row td {
-    border-top: 1.5px solid rgba(234,179,8,0.5) !important;
-    border-bottom: 1.5px solid rgba(234,179,8,0.5) !important;
-    background-color: rgba(234,179,8,0.06);
+    background-color: #007bff !important;
+    color: white !important;
+    font-weight: bold !important;
+    box-shadow: 0 0 12px rgba(0,123,255,0.4) !important;
+    border-top: 1px solid #3b82f6 !important;
+    border-bottom: 1px solid #3b82f6 !important;
+}
+.atm-row .strike-cell {
+    background-color: #0b5ed7 !important;
 }
 
-.ce-itm { background: var(--itm-ce); }
-.pe-itm { background: var(--itm-pe); }
+/* ITM Logic */
+.itm {
+    background-color: rgba(0, 255, 136, 0.12) !important;
+    color: #00ff88 !important;
+}
+
+/* OTM Logic (slight transparency to reduce visual noise) */
+.otm {
+    background-color: rgba(255, 77, 77, 0.05) !important;
+    color: #ff4d4d !important;
+    opacity: 0.90;
+}
 
 .ltp { font-weight: 600; }
 
