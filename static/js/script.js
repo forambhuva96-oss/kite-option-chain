@@ -13,28 +13,21 @@
         return s + new Intl.NumberFormat('en-IN').format(Math.round(v));
     };
 
-    /* ── find top-2 values in ATM + OTM rows only ── */
-    function findMaxes(chain, atm_strike) {
+    function findMaxes(chain) {
         const mx = {
-            CE: { volume:[-Infinity,-Infinity], oi:[-Infinity,-Infinity], oi_change:[-Infinity,-Infinity], intraday_oi_chg:[-Infinity,-Infinity] },
-            PE: { volume:[-Infinity,-Infinity], oi:[-Infinity,-Infinity], oi_change:[-Infinity,-Infinity], intraday_oi_chg:[-Infinity,-Infinity] },
+            CE: { vol: -Infinity, oi: -Infinity, oi_chg: -Infinity },
+            PE: { vol: -Infinity, oi: -Infinity, oi_chg: -Infinity }
         };
-        function update(arr, val) {
-            if (val > arr[0])      { arr[1] = arr[0]; arr[0] = val; }
-            else if (val > arr[1]) { arr[1] = val; }
-        }
         chain.forEach(r => {
-            if (r.strike >= atm_strike && r.CE) {
-                update(mx.CE.volume,          r.CE.volume);
-                update(mx.CE.oi,              r.CE.oi);
-                if (r.CE.oi_change      != null) update(mx.CE.oi_change,      Math.abs(r.CE.oi_change));
-                if (r.CE.intraday_oi_chg!= null) update(mx.CE.intraday_oi_chg, Math.abs(r.CE.intraday_oi_chg));
+            if (r.CE) {
+                if (r.CE.volume != null && r.CE.volume > mx.CE.vol) mx.CE.vol = r.CE.volume;
+                if (r.CE.oi != null && r.CE.oi > mx.CE.oi) mx.CE.oi = r.CE.oi;
+                if (r.CE.intraday_oi_change != null && r.CE.intraday_oi_change > mx.CE.oi_chg) mx.CE.oi_chg = r.CE.intraday_oi_change;
             }
-            if (r.strike <= atm_strike && r.PE) {
-                update(mx.PE.volume,          r.PE.volume);
-                update(mx.PE.oi,              r.PE.oi);
-                if (r.PE.oi_change      != null) update(mx.PE.oi_change,      Math.abs(r.PE.oi_change));
-                if (r.PE.intraday_oi_chg!= null) update(mx.PE.intraday_oi_chg, Math.abs(r.PE.intraday_oi_chg));
+            if (r.PE) {
+                if (r.PE.volume != null && r.PE.volume > mx.PE.vol) mx.PE.vol = r.PE.volume;
+                if (r.PE.oi != null && r.PE.oi > mx.PE.oi) mx.PE.oi = r.PE.oi;
+                if (r.PE.intraday_oi_change != null && r.PE.intraday_oi_change > mx.PE.oi_chg) mx.PE.oi_chg = r.PE.intraday_oi_change;
             }
         });
         return mx;
@@ -45,29 +38,22 @@
         return `<td${cls ? ` class="${cls}"` : ''}>${content}</td>`;
     }
 
-    /* ── OI change cell: shows overnight + intraday stacked ── */
-    function oiChangeTd(overnight, intraday, side, itm, mx) {
-        const arr = mx[side].oi_change;
-        const absO = overnight != null ? Math.abs(overnight) : -Infinity;
-        let hlCls = null;
-        if (absO !== -Infinity) {
-            if (absO === arr[0] && arr[0] !== -Infinity) hlCls = side === 'CE' ? 'hl-ce' : 'hl-pe';
-            else if (absO === arr[1] && arr[1] !== -Infinity) hlCls = 'hl-2nd';
-        }
-        const itmCls = itm ? (side === 'CE' ? 'ce-itm' : 'pe-itm') : null;
+    function oiChangeTd(momentum, intraday, side, baseState, chgCls, chgTag) {
         const upDn = v => v == null ? '' : (v >= 0 ? 'oi-up' : 'oi-dn');
 
-        const overnightHtml = `<span class="oi-overnight ${upDn(overnight)}">${chSgn(overnight)}</span>`;
+        const momentumHtml = `<span class="oi-overnight ${upDn(momentum)}">${chSgn(momentum)}</span>`;
         const intradayHtml  = intraday != null
-            ? `<span class="oi-intraday ${upDn(intraday)}" title="Intraday (since 9:15 AM)">${chSgn(intraday)}</span>`
+            ? `<span class="oi-intraday ${upDn(intraday)}" title="Intraday vs Morning">${chSgn(intraday)}</span>`
             : '';
 
-        return `<td class="${[itmCls, hlCls, 'oi-chg-cell'].filter(Boolean).join(' ')}">
-            <div class="oi-chg-wrap">${overnightHtml}${intradayHtml}</div>
+        return `<td class="${[baseState, chgCls, 'oi-chg-cell'].filter(Boolean).join(' ')}">
+            <div style="display:flex; justify-content:flex-end; align-items:center;">
+                <div class="oi-chg-wrap" style="margin-right:2px">${momentumHtml}${intradayHtml}</div>
+                ${chgTag}
+            </div>
         </td>`;
     }
 
-    /* ── Populate expiry dropdown ── */
     function populateExpiries(expiries, selectedVal) {
         expirySelect.innerHTML = expiries
             .map(e => `<option value="${e.value}"${e.value === selectedVal ? ' selected' : ''}>${e.label}</option>`)
@@ -85,50 +71,85 @@
             }
         }
 
-        const mx = findMaxes(data.chain, data.atm_strike);
+        const mx = findMaxes(data.chain);
         let html = '';
         data.chain.forEach(row => {
-            const isAtm = row.strike === data.atm_strike;
-            const ceItm = row.strike < data.atm_strike;
-            const peItm = row.strike > data.atm_strike;
+            const isAtm = Number(row.strike) === Number(data.atm_strike);
+            const ceItm = Number(row.strike) < Number(data.atm_strike);
+            const peItm = Number(row.strike) > Number(data.atm_strike);
             
             const ceState = ceItm ? 'itm' : 'otm';
             const peState = peItm ? 'itm' : 'otm';
             const ce = row.CE, pe = row.PE;
+            
+            // Evaluators
+            const isCeVolMax = ce && ce.volume != null && ce.volume === mx.CE.vol && mx.CE.vol > -Infinity;
+            const isCeOiMax = ce && ce.oi != null && ce.oi === mx.CE.oi && mx.CE.oi > -Infinity;
+            const isCeChgMax = ce && ce.intraday_oi_change != null && ce.intraday_oi_change === mx.CE.oi_chg && mx.CE.oi_chg > -Infinity;
+            
+            const isPeVolMax = pe && pe.volume != null && pe.volume === mx.PE.vol && mx.PE.vol > -Infinity;
+            const isPeOiMax = pe && pe.oi != null && pe.oi === mx.PE.oi && mx.PE.oi > -Infinity;
+            const isPeChgMax = pe && pe.intraday_oi_change != null && pe.intraday_oi_change === mx.PE.oi_chg && mx.PE.oi_chg > -Infinity;
 
-            const hlCls = (side, field, d) => {
-                if (!d) return null;
-                const arr = mx[side][field];
-                const val = field.includes('oi_change') ? Math.abs(d[field]) : d[field];
-                if (val == null || val === -Infinity) return null;
-                if (val === arr[0] && arr[0] !== -Infinity) return side === 'CE' ? 'hl-ce' : 'hl-pe';
-                if (val === arr[1] && arr[1] !== -Infinity) return 'hl-2nd';
-                return null;
+            const formatAction = (str) => {
+                if(!str || str==="NO TRADE") return `<span style="color: var(--muted)">—</span>`;
+                if(str.includes("BUY")) return `<span style="color: #00ff88; font-weight:bold;">${str}</span>`;
+                return `<span style="color: #ff4d4d; font-weight:bold;">${str}</span>`;
             };
+            const formatAlert = (str, alertFlag) => {
+                if(!str || str==="No Trade") return `<span style="color: var(--muted)">Idle</span>`;
+                return alertFlag ? `<span style="color: #00ff88; font-weight:bold; font-size:1.05em">★ ${str}</span>` : `<span>${str}</span>`;
+            };
+            const formatStrength = (str) => {
+                if(!str || str==="weak") return `<span style="color: var(--muted)">Weak</span>`;
+                if(str==="strong") return `<span style="color: #007bff; font-weight:bold;">Strong</span>`;
+                return `<span style="color: #fde68a;">Moderate</span>`;
+            }
 
             html += `<tr${isAtm ? ' class="atm-row"' : ''}>`;
 
-            // CALLS: Greeks | OI | ChgOI | Volume | LTP
-            html += td(ce?.iv    != null ? fmtP(ce.iv)       : '—', [ceState,'greek']);
-            html += td(ce?.delta != null ? fmtP(ce.delta, 3) : '—', [ceState,'greek']);
-            html += td(ce?.theta != null ? fmtP(ce.theta)    : '—', [ceState,'greek']);
-            html += td(ce ? fmt(ce.oi) : '—',     [ceState, hlCls('CE','oi',ce)]);
-            // OI change cell (overnight + intraday stacked)
-            html += oiChangeTd(ce?.oi_change, ce?.intraday_oi_chg, 'CE', ceItm, mx);
-            html += td(ce ? fmt(ce.volume) : '—', [ceState, hlCls('CE','volume',ce)]);
+            // CALLS ALGO: Action | Signal | Strength
+            html += td(ce ? formatAction(ce.action)   : '—', [ceState,'greek']);
+            html += td(ce ? formatAlert(ce.signal, ce.alert) : '—', [ceState,'greek']);
+            html += td(ce ? formatStrength(ce.strength) : '—', [ceState,'greek']);
+            
+            // CALLS DATA: OI | Chg OI | Volume | LTP
+            let ceOiCls = (!isAtm && isCeOiMax) ? 'ce-oi-max' : null;
+            let ceOiTag = isCeOiMax ? ' <span class="max-tag" style="' + (isAtm?'background:#00ff88;color:#000;':'') + '">OI↑</span>' : '';
+            html += td(ce ? fmt(ce.oi) + ceOiTag : '—', [ceState, ceOiCls]);
+            
+            let ceChgCls = (!isAtm && isCeChgMax) ? 'ce-oichg-max' : null;
+            let ceChgTag = isCeChgMax ? ' <span class="max-tag" style="' + (isAtm?'background:#66ffcc;color:#000;':'') + '">ΔOI↑</span>' : '';
+            html += oiChangeTd(ce?.momentum_oi_change, ce?.intraday_oi_change, 'CE', ceState, ceChgCls, ceChgTag);
+            
+            let ceVolCls = (!isAtm && isCeVolMax) ? 'ce-vol-max' : null;
+            let ceVolTag = isCeVolMax ? ' <span class="max-tag" style="' + (isAtm?'background:#00cc66;color:#000;':'') + '">VOL↑</span>' : '';
+            html += td(ce ? fmt(ce.volume) + ceVolTag : '—', [ceState, ceVolCls]);
+            
             html += td(ce ? fmtP(ce.ltp)   : '—', [ceState,'ltp']);
 
             // STRIKE
             html += `<td class="strike-cell">${fmt(row.strike)}</td>`;
 
-            // PUTS: LTP | Volume | ChgOI | OI | Greeks
+            // PUTS DATA: LTP | Volume | Chg OI | OI
             html += td(pe ? fmtP(pe.ltp)   : '—', [peState,'ltp']);
-            html += td(pe ? fmt(pe.volume) : '—', [peState, hlCls('PE','volume',pe)]);
-            html += oiChangeTd(pe?.oi_change, pe?.intraday_oi_chg, 'PE', peItm, mx);
-            html += td(pe ? fmt(pe.oi) : '—',     [peState, hlCls('PE','oi',pe)]);
-            html += td(pe?.iv    != null ? fmtP(pe.iv)       : '—', [peState,'greek']);
-            html += td(pe?.delta != null ? fmtP(pe.delta, 3) : '—', [peState,'greek']);
-            html += td(pe?.theta != null ? fmtP(pe.theta)    : '—', [peState,'greek']);
+            
+            let peVolCls = (!isAtm && isPeVolMax) ? 'pe-vol-max' : null;
+            let peVolTag = isPeVolMax ? ' <span class="max-tag" style="' + (isAtm?'background:#ff1a1a;color:#fff;':'') + '">VOL↑</span>' : '';
+            html += td(pe ? fmt(pe.volume) + peVolTag : '—', [peState, peVolCls]);
+
+            let peChgCls = (!isAtm && isPeChgMax) ? 'pe-oichg-max' : null;
+            let peChgTag = isPeChgMax ? ' <span class="max-tag" style="' + (isAtm?'background:#ff9999;color:#000;':'') + '">ΔOI↑</span>' : '';
+            html += oiChangeTd(pe?.momentum_oi_change, pe?.intraday_oi_change, 'PE', peState, peChgCls, peChgTag);
+
+            let peOiCls = (!isAtm && isPeOiMax) ? 'pe-oi-max' : null;
+            let peOiTag = isPeOiMax ? ' <span class="max-tag" style="' + (isAtm?'background:#ff4d4d;color:#fff;':'') + '">OI↑</span>' : '';
+            html += td(pe ? fmt(pe.oi) + peOiTag : '—', [peState, peOiCls]);
+            
+            // PUTS ALGO: Strength | Signal | Action
+            html += td(pe ? formatStrength(pe.strength) : '—', [peState,'greek']);
+            html += td(pe ? formatAlert(pe.signal, pe.alert) : '—', [peState,'greek']);
+            html += td(pe ? formatAction(pe.action)   : '—', [peState,'greek']);
 
             html += '</tr>';
         });
@@ -149,26 +170,26 @@
                 document.getElementById('liveBadge').style.opacity = '1';
             } else {
                 console.error('API error:', data.error);
-                chainBody.innerHTML = `<tr><td colspan="15" style="text-align:center;padding:2.5rem;color:var(--danger)">[SYSTEM ERROR]: ${data.error}<br><br><a href="/" style="color:var(--primary); text-decoration:underline;">Click Here to Authenticate / Start Engine</a></td></tr>`;
+                chainBody.innerHTML = `<tr><td colspan="17" style="text-align:center;padding:2.5rem;color:var(--danger)">[SYSTEM EXCEPTION]: ${data.error}<br><br><a href="/" style="color:var(--primary); text-decoration:underline;">Click Here to Authenticate Engine</a></td></tr>`;
             }
         } catch (err) {
             console.error('Fetch error:', err);
             document.getElementById('liveBadge').style.opacity = '0.4';
-            chainBody.innerHTML = `<tr><td colspan="15" style="text-align:center;padding:2.5rem;color:var(--danger)">[NETWORK ERROR]: Cannot reach backend. Please wait...</td></tr>`;
+            chainBody.innerHTML = `<tr><td colspan="17" style="text-align:center;padding:2.5rem;color:var(--danger)">[NETWORK ERROR]: Cannot reach backend. Please wait...</td></tr>`;
         }
     }
 
     symbolSelect.addEventListener('change', () => {
         expirySelect.innerHTML = '<option value="">Loading…</option>';
-        chainBody.innerHTML = '<tr><td colspan="15" style="text-align:center;padding:2.5rem;color:var(--muted)">Loading…</td></tr>';
+        chainBody.innerHTML = '<tr><td colspan="17" style="text-align:center;padding:2.5rem;color:var(--muted)">Loading…</td></tr>';
         fetchData();
     });
 
     expirySelect.addEventListener('change', () => {
-        chainBody.innerHTML = '<tr><td colspan="15" style="text-align:center;padding:2.5rem;color:var(--muted)">Loading…</td></tr>';
+        chainBody.innerHTML = '<tr><td colspan="17" style="text-align:center;padding:2.5rem;color:var(--muted)">Loading…</td></tr>';
         fetchData();
     });
 
     fetchData();
-    setInterval(fetchData, 5000);
+    setInterval(fetchData, 8000);
 })();

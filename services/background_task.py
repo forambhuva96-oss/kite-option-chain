@@ -164,6 +164,7 @@ async def _poll_option_chain(access_token: str):
                             q = opt_quotes[sym]
                             ltp = q.get("last_price", 0)
                             curr_oi = q.get("oi", 0)
+                            volume = q.get("volume", 0)
                             
                             o_base = open_base.get(sym)
                             baseline_oi = o_base if o_base is not None else curr_oi
@@ -186,6 +187,7 @@ async def _poll_option_chain(access_token: str):
                             entry[kind] = {
                                 "ltp": ltp,
                                 "oi": curr_oi,
+                                "volume": volume,
                                 "intraday_oi_change": intraday_chg,
                                 "momentum_oi_change": momentum_oi,
                                 "signal": signal,

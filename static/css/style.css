@@ -381,3 +381,28 @@ body {
     .option-table td, .option-table th { padding: 0.5rem 0.6rem; }
     .spot-block { display: none; }
 }
+
+/* ─── EXACT MAXIMUM HIGHLIGHTS ──────────────────── */
+
+/* CE Green Theme */
+.ce-vol-max { background-color: #00cc66 !important; color: #ffffff !important; font-weight: bold !important; border: 1px solid rgba(0,255,136,0.5); }
+.ce-oi-max { background-color: #00ff88 !important; color: #000000 !important; font-weight: bold !important; border: 1px solid rgba(0,255,136,0.6); }
+.ce-oichg-max { background-color: #66ffcc !important; color: #000000 !important; font-weight: bold !important; border: 1px solid rgba(0,255,136,0.7); }
+
+/* PE Red Theme */
+.pe-vol-max { background-color: #ff1a1a !important; color: #ffffff !important; font-weight: bold !important; border: 1px solid rgba(255,77,77,0.5); }
+.pe-oi-max { background-color: #ff4d4d !important; color: #ffffff !important; font-weight: bold !important; border: 1px solid rgba(255,77,77,0.6); }
+.pe-oichg-max { background-color: #ff9999 !important; color: #000000 !important; font-weight: bold !important; border: 1px solid rgba(255,77,77,0.7); }
+
+/* In-Cell Tag Geometry */
+.max-tag {
+    display: inline-block;
+    font-size: 0.6rem;
+    padding: 1px 4px;
+    border-radius: 4px;
+    margin-left: 6px;
+    vertical-align: middle;
+    background: rgba(0,0,0,0.25);
+    color: inherit;
+    font-weight: 800;
+}
