@@ -286,25 +286,26 @@ td {
     letter-spacing: 0.3px;
 }
 
-/* ─── ATM ROW ────────────────────────────────── */
+/* --- ATM ROW ---------------------------------------- */
 tr.atm td {
-    background: rgba(255,214,0,0.06) !important;
-    border-top: 1px solid rgba(255,214,0,0.25) !important;
-    border-bottom: 1px solid rgba(255,214,0,0.25) !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-weight: 700 !important;
+    border-top: 2px solid #dddddd !important;
+    border-bottom: 2px solid #dddddd !important;
 }
 tr.atm .strike {
-    background: linear-gradient(135deg, rgba(255,214,0,0.3), rgba(255,140,0,0.15)) !important;
-    color: #ffd400 !important;
-    border-left: 2px solid rgba(255,214,0,0.6) !important;
-    border-right: 2px solid rgba(255,214,0,0.6) !important;
-    box-shadow: 0 0 20px rgba(255,214,0,0.15);
-    animation: atm-glow 2.5s ease-in-out infinite;
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-weight: 900 !important;
+    border-left: 2px solid #aaaaaa !important;
+    border-right: 2px solid #aaaaaa !important;
 }
+tr.atm .ltp-ce { color: #007a3d !important; }
+tr.atm .ltp-pe { color: #cc0000 !important; }
+tr.atm .oi-up  { color: #007a3d !important; }
+tr.atm .oi-down { color: #cc0000 !important; }
 
-@keyframes atm-glow {
-    0%, 100% { box-shadow: 0 0 10px rgba(255,214,0,0.15); }
-    50% { box-shadow: 0 0 25px rgba(255,214,0,0.35); }
-}
 
 /* ─── RESISTANCE / SUPPORT ───────────────────── */
 .resistance {
