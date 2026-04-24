@@ -1,8 +1,8 @@
 import asyncio
 import os
 import uvicorn
-from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, Form, Request, Query
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
@@ -93,6 +93,29 @@ async def serve_mobile_controller(request: Request):
             "kite_api_key": kite_api_key
         }
     )
+
+@app.get("/callback")
+async def kite_callback(
+    request_token: str = Query(None),
+    action: str = Query(None),
+    status: str = Query(None)
+):
+    """
+    Kite Connect redirects here after the user logs in on the Kite website.
+    URL format: /callback?action=login&type=login&status=success&request_token=XXXXXX
+    """
+    if not request_token:
+        logger.error("Callback received but no request_token in URL params")
+        return RedirectResponse(url="/auth?error=missing_token")
+    
+    try:
+        token = await asyncio.to_thread(kite_auth.generate_session_from_token, request_token)
+        background_task.start_polling(token)
+        logger.info("Auto-login via /callback successful")
+        return RedirectResponse(url="/")          # Send user straight to dashboard
+    except Exception as e:
+        logger.error(f"Callback login failed: {e}")
+        return RedirectResponse(url=f"/auth?error={str(e)}")
 
 @app.post("/login")
 async def process_login(request_token: str = Form(...)):
