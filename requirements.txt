@@ -2,6 +2,7 @@ kiteconnect
 python-dotenv
 fastapi
 uvicorn
+gunicorn
 jinja2
 python-multipart
 requests
@@ -9,3 +10,4 @@ pandas
 pytz
 pyotp
 websockets
+
