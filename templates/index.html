@@ -320,9 +320,29 @@ tr.atm .oi-down { color: #cc0000 !important; }
     font-weight: 700 !important;
 }
 
-/* ─── LTP COLORS ─────────────────────────────── */
+/* --- LTP COLORS ------------------------------------ */
 .ltp-ce { color: var(--green) !important; font-weight: 700 !important; }
 .ltp-pe { color: var(--red)   !important; font-weight: 700 !important; }
+
+/* --- CE metric highlight (OI / Vol / dOI) ---------- */
+.ce-metric {
+    background: rgba(255,61,87,0.13) !important;
+    color: #ff6b7a !important;
+}
+/* --- PE metric highlight (OI / Vol / dOI) ---------- */
+.pe-metric {
+    background: rgba(0,230,118,0.13) !important;
+    color: #4dffab !important;
+}
+/* Override on white ATM row so colours still pop */
+tr.atm .ce-metric {
+    background: rgba(255,0,0,0.10) !important;
+    color: #cc0000 !important;
+}
+tr.atm .pe-metric {
+    background: rgba(0,150,60,0.10) !important;
+    color: #007a3d !important;
+}
 
 /* ─── ΔOI ARROWS ─────────────────────────────── */
 .oi-up   { color: var(--green); }
@@ -727,15 +747,16 @@ function updateTable(data, atm) {
         // ── CE OI (col 0)
         const isMaxCE = ce_oi === maxCE_OI && !isAtm;
         tds[0].textContent = fmt(ce_oi);
-        tds[0].className   = isMaxCE ? 'resistance' : isAtm ? '' : ceITM ? 'itm' : 'otm';
+        tds[0].className   = isMaxCE ? 'resistance' : ceITM ? 'itm' : 'ce-metric';
 
-        // ── CE ΔOI (col 1)
+        // ── CE dOI (col 1)
         const { text: t1, cls: c1 } = fmtDeltaOI(ce_dOI);
-        tds[1].textContent = t1; tds[1].className = c1 + (ceITM ? ' itm' : ' otm');
+        tds[1].textContent = t1;
+        tds[1].className   = ceITM ? c1 + ' itm' : 'ce-metric';
 
         // ── CE Vol (col 2)
         tds[2].textContent = fmt(ce_vol);
-        tds[2].className   = isAtm ? '' : ceITM ? 'itm' : 'otm';
+        tds[2].className   = ceITM ? 'itm' : 'ce-metric';
 
         // ── CE LTP (col 3)
         tds[3].textContent = fmt(ce_ltp);
@@ -751,16 +772,17 @@ function updateTable(data, atm) {
 
         // ── PE Vol (col 6)
         tds[6].textContent = fmt(pe_vol);
-        tds[6].className   = isAtm ? '' : peITM ? 'itm' : 'otm';
+        tds[6].className   = peITM ? 'itm' : 'pe-metric';
 
-        // ── PE ΔOI (col 7)
+        // ── PE dOI (col 7)
         const { text: t7, cls: c7 } = fmtDeltaOI(pe_dOI);
-        tds[7].textContent = t7; tds[7].className = c7 + (peITM ? ' itm' : ' otm');
+        tds[7].textContent = t7;
+        tds[7].className   = peITM ? c7 + ' itm' : 'pe-metric';
 
         // ── PE OI (col 8)
         const isMaxPE = pe_oi === maxPE_OI && !isAtm;
         tds[8].textContent = fmt(pe_oi);
-        tds[8].className   = isMaxPE ? 'support' : isAtm ? '' : peITM ? 'itm' : 'otm';
+        tds[8].className   = isMaxPE ? 'support' : peITM ? 'itm' : 'pe-metric';
     });
 
     // Remove stale rows
