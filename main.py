@@ -34,8 +34,16 @@ async def lifespan(app: FastAPI):
     # 1. Initialize DB safely
     await asyncio.to_thread(oi_tracker.init_db)
     
-    # 2. Extract Official NSE Bhavcopy
-    await asyncio.to_thread(nse_engine.fetch_current_bhavcopy)
+    # 2. Extract Official NSE Bhavcopy (non-blocking — 8s timeout)
+    try:
+        await asyncio.wait_for(
+            asyncio.to_thread(nse_engine.fetch_current_bhavcopy),
+            timeout=8.0
+        )
+    except asyncio.TimeoutError:
+        logger.warning("NSE Bhavcopy fetch timed out — broker fallback will be used.")
+    except Exception as e:
+        logger.warning(f"NSE Bhavcopy fetch failed: {e} — continuing with broker fallback.")
     
     # 3. Spin up Edge Node Daemon (Redis Consumer Stream)
     asyncio.create_task(manager.start_redis_listener())

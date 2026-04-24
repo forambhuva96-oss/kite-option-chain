@@ -306,31 +306,32 @@ async def _poll_option_chain(access_token: str):
             STATE["expiry"] = expiry_str
             STATE["all_expiries"] = [{"label": e.strftime("%d %b %Y"), "value": e.strftime("%Y-%m-%d")} for e in expiries[:5]]
 
-            # Execute Local Engine Sync Calculation 
+            # Execute Local Engine Sync Calculation
             delta_chunk = _compute_delta(_last_full_state, STATE, master_seq_id)
             _last_full_state = dict(STATE)
-            
-            # Redis Publishing Layer dynamically decouples WebSockets natively
+
             try:
-                full_payload = {
-                    "type": "FULL",
-                    "seq_id": master_seq_id,
-                    "timestamp": STATE.get("last_updated", ""),
-                    "spot_price": STATE.get("spot_price", 0),
-                    "atm_strike": STATE.get("atm_strike", 0),
-                    "expiry": STATE.get("expiry", ""),
-                    "chain": STATE.get("latest_data", [])
-                }
-                
-                if delta_chunk:
+                from core.broadcaster import manager
+                # Always broadcast in-process (works without Redis)
+                asyncio.create_task(manager.broadcast(STATE))
+
+                # Also publish to Redis if available (for multi-node scaling)
+                from core.redis_layer import redis_client
+                if redis_client and delta_chunk:
                     master_seq_id += 1
+                    full_payload = {
+                        "type": "FULL",
+                        "seq_id": master_seq_id,
+                        "timestamp": STATE.get("last_updated", ""),
+                        "spot_price": STATE.get("spot_price", 0),
+                        "atm_strike": STATE.get("atm_strike", 0),
+                        "expiry": STATE.get("expiry", ""),
+                        "chain": STATE.get("latest_data", [])
+                    }
+                    from core.redis_layer import publish_delta
                     asyncio.create_task(publish_delta("nifty:stream", delta_chunk, full_payload))
-                elif len(full_payload["chain"]) > 0:
-                    # Still keep full payload fresh for edge cases or restarts natively
-                    asyncio.create_task(publish_delta("nifty:stream", full_payload, full_payload))
-                    
             except Exception as broadcast_err:
-                logger.error(f"Failed to delta-broadcast WS data: {broadcast_err}")
+                logger.error(f"Broadcast error: {broadcast_err}")
 
         except Exception as e:
             err_str = str(e).lower()
