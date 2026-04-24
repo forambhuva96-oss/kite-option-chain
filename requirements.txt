@@ -1,10 +1,11 @@
 kiteconnect
 python-dotenv
 fastapi
-uvicorn[standard]
+uvicorn
 jinja2
 python-multipart
 requests
 pandas
 pytz
 pyotp
+websockets
