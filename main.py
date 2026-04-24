@@ -22,6 +22,7 @@ logger = logging.getLogger("app")
 
 from services import kite_auth
 from services import background_task
+from services.nse_bhavcopy import nse_engine
 from utils import oi_tracker
 
 load_dotenv()
@@ -33,7 +34,13 @@ async def lifespan(app: FastAPI):
     # 1. Initialize DB safely
     await asyncio.to_thread(oi_tracker.init_db)
     
-    # 2. Check Auto-Resume Capability
+    # 2. Extract Official NSE Bhavcopy
+    await asyncio.to_thread(nse_engine.fetch_current_bhavcopy)
+    
+    # 3. Spin up Edge Node Daemon (Redis Consumer Stream)
+    asyncio.create_task(manager.start_redis_listener())
+    
+    # 4. Check Auto-Resume Capability
     saved_token = kite_auth.load_saved_token()
     if saved_token:
         logger.info("System Auto-Resumed")
@@ -49,6 +56,11 @@ app = FastAPI(lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 templates = Jinja2Templates(directory="templates")
+
+from routes.ws_routes import ws_router
+from core.broadcaster import manager
+
+app.include_router(ws_router)
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_dashboard(request: Request):
@@ -122,7 +134,8 @@ async def api_option_chain_frontend(symbol: str = "NIFTY", expiry: str = None):
         "atm_strike": backend_val.get("atm_strike", 0),
         "expiry": backend_val.get("expiry", "Unknown"),
         "all_expiries": backend_val.get("all_expiries", []),
-        "chain": data_list
+        "chain": data_list,
+        "timestamp": backend_val.get("timestamp", "")
     }
 
 @app.get("/health")

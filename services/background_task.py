@@ -7,7 +7,9 @@ import logging
 import os
 from dotenv import load_dotenv
 
+from core.redis_layer import publish_delta
 from services.kite_auth import get_kite_client
+from services.nse_bhavcopy import GLOBAL_NSE_CACHE
 from utils import oi_tracker
 
 load_dotenv()
@@ -19,6 +21,9 @@ STATE = {
     "latest_data": [],
     "last_updated": None
 }
+
+# In-Memory Cache to eliminate SQLite I/O bottlenecks during live ticks
+EOD_CACHE = {}
 
 _active_task = None
 
@@ -96,6 +101,58 @@ def compute_signal_and_action(price_change, oi_change, oi_thr, px_thr):
         
     return signal, strength, action
 
+def _compute_delta(old_state: dict, new_state: dict, seq_id: int) -> dict:
+    if not old_state:
+        return None
+        
+    new_timestamp = new_state.get("last_updated")
+    if new_timestamp == old_state.get("last_updated"):
+        return None 
+        
+    delta = {
+        "type": "DELTA",
+        "seq_id": seq_id,
+        "timestamp": new_timestamp,
+        "spot_price": new_state.get("spot_price"),
+        "atm_strike": new_state.get("atm_strike"),
+        "expiry": new_state.get("expiry"),
+        "chain_updates": {}
+    }
+    
+    old_chain = {str(item["strike"]): item for item in old_state.get("latest_data", [])}
+    new_chain = new_state.get("latest_data", [])
+    
+    updates = False
+    
+    for item in new_chain:
+        strike = str(item["strike"])
+        old_item = old_chain.get(strike)
+        if not old_item:
+            delta["chain_updates"][strike] = item
+            updates = True
+            continue
+            
+        strike_updates = {}
+        for side in ["CE", "PE"]:
+            if item.get(side) and old_item.get(side):
+                side_diff = {}
+                for k, v in item[side].items():
+                    if old_item[side].get(k) != v:
+                        side_diff[k] = v
+                if side_diff:
+                    strike_updates[side] = side_diff
+            elif item.get(side):
+                strike_updates[side] = item[side]
+                
+        if strike_updates:
+            delta["chain_updates"][strike] = strike_updates
+            updates = True
+            
+    if not updates:
+        return None
+        
+    return delta
+
 async def _poll_option_chain(access_token: str):
     logger.info("Algorithmic Signal Engine Task Running")
     kite = get_kite_client(access_token)
@@ -112,6 +169,9 @@ async def _poll_option_chain(access_token: str):
     previous_state = {}         # Stores previous tick's OI/Price
     confirmation_state = {}     # Stores previous cycle's ACTION (for consecutive alerting)
     last_saved_minute = None
+    
+    _last_full_state = {}
+    master_seq_id = 1
 
     while STATE["status"] == "running":
         try:
@@ -139,10 +199,22 @@ async def _poll_option_chain(access_token: str):
             opt_quotes = await asyncio.to_thread(kite.quote, opt_syms) if opt_syms else {}
 
             expiry_str = nearest_expiry.strftime("%Y-%m-%d")
-            open_base = await asyncio.to_thread(oi_tracker.get_open_snapshot, "NIFTY", expiry_str)
-            if not open_base:
-                await asyncio.to_thread(oi_tracker.save_snapshot, kite, "OPEN")
-                open_base = await asyncio.to_thread(oi_tracker.get_open_snapshot, "NIFTY", expiry_str)
+            
+            # Smart Cache Layer: Load from SQLite ONCE per expiry
+            if expiry_str not in EOD_CACHE or not EOD_CACHE[expiry_str]:
+                baseline_data = await asyncio.to_thread(oi_tracker.get_eod_snapshot, kite, "NIFTY", expiry_str)
+                if not baseline_data:
+                    # Fallback to OPEN snapshot if yesterday's historical was completely empty
+                    baseline_data = await asyncio.to_thread(oi_tracker.get_open_snapshot, "NIFTY", expiry_str)
+                    if not baseline_data:
+                        await asyncio.to_thread(oi_tracker.save_snapshot, kite, "OPEN")
+                        baseline_data = await asyncio.to_thread(oi_tracker.get_open_snapshot, "NIFTY", expiry_str)
+                
+                # Only cache if data was successfully fetched to avoid caching network failures permanently
+                if baseline_data:
+                    EOD_CACHE[expiry_str] = baseline_data
+            
+            baseline_data = EOD_CACHE.get(expiry_str, {})
 
             chain_data = []
             hist_records = []
@@ -166,9 +238,26 @@ async def _poll_option_chain(access_token: str):
                             curr_oi = q.get("oi", 0)
                             volume = q.get("volume", 0)
                             
-                            o_base = open_base.get(sym)
-                            baseline_oi = o_base if o_base is not None else curr_oi
-                            intraday_chg = curr_oi - baseline_oi
+                            o_base = None
+                            
+                            # STEP 1: Deep Query Institutional NSE Memory Array
+                            if "NIFTY" in GLOBAL_NSE_CACHE and expiry_str in GLOBAL_NSE_CACHE["NIFTY"]:
+                                if str(strike) in GLOBAL_NSE_CACHE["NIFTY"][expiry_str]:
+                                    nse_map = GLOBAL_NSE_CACHE["NIFTY"][expiry_str][str(strike)].get(kind)
+                                    if nse_map:
+                                        o_base = nse_map["open_interest"]
+                            
+                            # STEP 2: Pure Database Integrity Fallback Layer (Offline API Shield)
+                            if o_base is None:
+                                o_base = baseline_data.get(sym)
+                            
+                            # STEP 3: Safe Null Fallback Boundary to Prevent Ghost 0 Plots
+                            if o_base is None:
+                                baseline_oi = None
+                                intraday_chg = None
+                            else:
+                                baseline_oi = o_base
+                                intraday_chg = curr_oi - baseline_oi
 
                             prev = previous_state.get(sym, {"oi": curr_oi, "ltp": ltp})
                             momentum_oi = curr_oi - prev["oi"]
@@ -216,6 +305,32 @@ async def _poll_option_chain(access_token: str):
             STATE["atm_strike"] = atm_strike
             STATE["expiry"] = expiry_str
             STATE["all_expiries"] = [{"label": e.strftime("%d %b %Y"), "value": e.strftime("%Y-%m-%d")} for e in expiries[:5]]
+
+            # Execute Local Engine Sync Calculation 
+            delta_chunk = _compute_delta(_last_full_state, STATE, master_seq_id)
+            _last_full_state = dict(STATE)
+            
+            # Redis Publishing Layer dynamically decouples WebSockets natively
+            try:
+                full_payload = {
+                    "type": "FULL",
+                    "seq_id": master_seq_id,
+                    "timestamp": STATE.get("last_updated", ""),
+                    "spot_price": STATE.get("spot_price", 0),
+                    "atm_strike": STATE.get("atm_strike", 0),
+                    "expiry": STATE.get("expiry", ""),
+                    "chain": STATE.get("latest_data", [])
+                }
+                
+                if delta_chunk:
+                    master_seq_id += 1
+                    asyncio.create_task(publish_delta("nifty:stream", delta_chunk, full_payload))
+                elif len(full_payload["chain"]) > 0:
+                    # Still keep full payload fresh for edge cases or restarts natively
+                    asyncio.create_task(publish_delta("nifty:stream", full_payload, full_payload))
+                    
+            except Exception as broadcast_err:
+                logger.error(f"Failed to delta-broadcast WS data: {broadcast_err}")
 
         except Exception as e:
             err_str = str(e).lower()

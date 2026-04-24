@@ -10,3 +10,21 @@
 2026-04-21 01:07:52,866 - app - INFO - [Lifespan] No active token found. Awaiting mobile login.
 2026-04-21 01:21:08,008 - app - INFO - Server Started
 2026-04-21 01:21:08,040 - app - INFO - [Lifespan] No active token found. Awaiting mobile login.
+2026-04-21 12:02:12,375 - app - INFO - Server Started
+2026-04-21 12:02:12,424 - app - INFO - [Lifespan] No active token found. Awaiting mobile login.
+2026-04-21 12:33:50,191 - asyncio - ERROR - Exception in callback _ProactorBasePipeTransport._call_connection_lost(None)
+handle: <Handle _ProactorBasePipeTransport._call_connection_lost(None)>
+Traceback (most recent call last):
+  File "C:\Users\Ankur\AppData\Local\Programs\Python\Python311\Lib\asyncio\events.py", line 84, in _run
+    self._context.run(self._callback, *self._args)
+  File "C:\Users\Ankur\AppData\Local\Programs\Python\Python311\Lib\asyncio\proactor_events.py", line 165, in _call_connection_lost
+    self._sock.shutdown(socket.SHUT_RDWR)
+ConnectionResetError: [WinError 10054] An existing connection was forcibly closed by the remote host
+2026-04-21 12:34:39,308 - asyncio - ERROR - Exception in callback _ProactorBasePipeTransport._call_connection_lost(None)
+handle: <Handle _ProactorBasePipeTransport._call_connection_lost(None)>
+Traceback (most recent call last):
+  File "C:\Users\Ankur\AppData\Local\Programs\Python\Python311\Lib\asyncio\events.py", line 84, in _run
+    self._context.run(self._callback, *self._args)
+  File "C:\Users\Ankur\AppData\Local\Programs\Python\Python311\Lib\asyncio\proactor_events.py", line 165, in _call_connection_lost
+    self._sock.shutdown(socket.SHUT_RDWR)
+ConnectionResetError: [WinError 10054] An existing connection was forcibly closed by the remote host

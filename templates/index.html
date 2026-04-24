@@ -2,162 +2,422 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<!-- Extremely specific version caching tags mapped here -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
+<title>NIFTY Option Chain — Live Dashboard</title>
+<meta name="description" content="Real-time NIFTY Option Chain dashboard with WebSocket streaming, delta OI, LTP and signal analysis.">
 
-<title>Option Chain Dashboard</title>
-
-<!-- Included Premium Google Font Base for Aesthetics -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 
 <style>
+:root {
+    --bg-primary: #080c14;
+    --bg-secondary: #0e1420;
+    --bg-card: #111827;
+    --bg-card-hover: #1a2235;
+    --border: rgba(255,255,255,0.06);
+    --border-bright: rgba(255,255,255,0.12);
+    --green: #00e676;
+    --green-dim: rgba(0,230,118,0.15);
+    --red: #ff3d57;
+    --red-dim: rgba(255,61,87,0.15);
+    --orange: #ff8c00;
+    --yellow: #ffd54f;
+    --blue: #448aff;
+    --purple: #ce93d8;
+    --text-primary: #e2e8f0;
+    --text-secondary: #8892a4;
+    --text-muted: #4a5568;
+    --atm-glow: rgba(255,214,0,0.25);
+    --font-mono: 'JetBrains Mono', monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
 body {
-    background-color: #0b0f19; /* Premium Dynamic Dark Mode */
-    color: #c9d1d9;
+    background-color: var(--bg-primary);
+    background-image:
+        radial-gradient(ellipse at 20% 0%, rgba(68,138,255,0.07) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 0%, rgba(0,230,118,0.05) 0%, transparent 50%);
+    color: var(--text-primary);
     font-family: 'Inter', sans-serif;
-    margin: 0;
-    padding: 20px;
+    min-height: 100vh;
+    padding: 0 0 40px 0;
 }
 
-h1 {
-    font-weight: 800;
-    font-size: 2.2em;
-    color: #00ff88;
-    text-align: center;
-    text-shadow: 0 0 20px rgba(0,255,136,0.3);
+/* ─── HEADER ─────────────────────────────────── */
+.header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 24px;
+    background: rgba(14,20,32,0.9);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 100;
 }
 
-.auth-notice {
-    text-align: center;
-    background: #151a27;
-    padding: 10px;
+.header-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.header-logo {
+    width: 36px;
+    height: 36px;
+    background: linear-gradient(135deg, var(--green), #00bcd4);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    font-weight: 900;
+    color: #000;
+}
+
+.header-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: -0.3px;
+}
+
+.header-subtitle {
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    font-weight: 400;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+
+/* WS Status Pill */
+.ws-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    border-radius: 100px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    transition: all 0.4s ease;
+}
+.ws-status.live {
+    background: rgba(0,230,118,0.1);
+    border: 1px solid rgba(0,230,118,0.3);
+    color: var(--green);
+}
+.ws-status.polling {
+    background: rgba(255,165,0,0.1);
+    border: 1px solid rgba(255,165,0,0.3);
+    color: #ffa500;
+}
+.ws-status.offline {
+    background: rgba(255,61,87,0.1);
+    border: 1px solid rgba(255,61,87,0.3);
+    color: var(--red);
+}
+
+.ws-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+}
+.ws-status.live .ws-dot {
+    animation: pulse-dot 1.5s ease infinite;
+}
+@keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.7); }
+}
+
+.header-auth-link {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    text-decoration: none;
+    padding: 6px 12px;
+    border: 1px solid var(--border-bright);
     border-radius: 8px;
-    margin-bottom: 20px;
-    border: 1px solid rgba(255,255,255,0.05);
+    transition: all 0.2s;
+}
+.header-auth-link:hover { color: var(--green); border-color: var(--green); }
+
+/* ─── AUTH WARNING ───────────────────────────── */
+.auth-notice {
+    display: none;
+    margin: 12px 24px;
+    padding: 12px 18px;
+    background: rgba(255,61,87,0.08);
+    border: 1px solid rgba(255,61,87,0.25);
+    border-radius: 10px;
+    font-size: 0.85rem;
+    color: var(--red);
+    text-align: center;
+}
+.auth-notice a { color: var(--red); font-weight: 700; }
+
+/* ─── BANNER ─────────────────────────────────── */
+.banner {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    padding: 16px 24px;
 }
 
-.auth-notice a { color: #00ff88; text-decoration: none; font-weight: bold; }
-.auth-notice a:hover { text-decoration: underline; }
-
-.table-wrapper {
-    overflow-x: auto;
+.banner-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
     border-radius: 12px;
-    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
-    background: #111827; /* Glassmorphic Base */
-    padding: 2px;
+    padding: 14px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    transition: border-color 0.3s;
+}
+.banner-card:hover { border-color: var(--border-bright); }
+
+.banner-label {
+    font-size: 0.68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-secondary);
+}
+
+.banner-value {
+    font-size: 1.3rem;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    letter-spacing: -0.5px;
+    transition: color 0.3s;
+}
+
+.banner-card.spot .banner-value { color: var(--green); }
+.banner-card.expiry .banner-value { color: var(--yellow); font-size: 1rem; }
+.banner-card.time .banner-value { color: var(--text-secondary); font-size: 1rem; }
+.banner-card.pcr .banner-value { color: var(--blue); }
+.banner-card.pcr.bullish .banner-value { color: var(--green); }
+.banner-card.pcr.bearish .banner-value { color: var(--red); }
+
+/* ─── TABLE WRAPPER ──────────────────────────── */
+.table-wrapper {
+    margin: 0 24px;
+    border-radius: 16px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    overflow-x: auto;
 }
 
 table {
     width: 100%;
     border-collapse: collapse;
+    min-width: 680px;
 }
 
-th, td {
-    padding: 10px 6px;
-    text-align: center;
-    border: 1px solid rgba(255,255,255,0.05);
+/* Sticky header */
+thead {
+    position: sticky;
+    top: 69px;
+    z-index: 50;
 }
 
-th {
-    background-color: #1a2235;
-    color: #ffffff;
-    font-weight: 600;
-    font-size: 0.9em;
+thead tr:first-child th {
+    background: #0a101e;
+    padding: 12px 8px;
+    font-size: 0.72rem;
+    font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 1.5px;
+    border-bottom: 1px solid var(--border);
 }
 
-/* STRIKE COLUMN */
-.strike {
-    background-color: #ff8c00;
-    color: white;
-    font-weight: 800;
-    position: relative;
-}
+thead tr:first-child th:first-child { color: var(--green); }
+thead tr:first-child th:last-child  { color: var(--red); }
+thead tr:first-child th.center-head { color: var(--orange); }
 
-/* ATM */
-.atm {
-    background-color: #000000 !important;
-    color: #ffffff !important;
-    font-weight: 800;
-    box-shadow: inset 0 0 15px rgba(255,255,255,0.1);
-}
-
-/* ITM (Black text exactly as user provided) */
-.itm {
-    background-color: #fff3b0;
-    color: #000000;
+thead tr:last-child th {
+    background: #0d1525;
+    padding: 9px 8px;
+    font-size: 0.7rem;
     font-weight: 600;
+    color: var(--text-secondary);
+    letter-spacing: 0.5px;
+    border-bottom: 2px solid var(--border-bright);
 }
 
-/* OTM (Black text exactly as user provided) */
-.otm {
-    background-color: #ffffff;
-    color: #000000;
+tbody tr {
+    transition: background 0.15s;
 }
 
-/* SUPPORT / RESISTANCE (Exact User Specifications) */
+tbody tr:hover td {
+    background: rgba(255,255,255,0.025) !important;
+}
+
+td {
+    padding: 9px 8px;
+    text-align: center;
+    font-size: 0.82rem;
+    font-family: var(--font-mono);
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+    transition: background 0.3s, color 0.3s;
+}
+
+/* ─── ITM / OTM ──────────────────────────────── */
+.itm { background-color: rgba(255,243,176,0.07); color: #e8dfa0; }
+.otm { background-color: transparent; color: var(--text-secondary); }
+
+/* ─── STRIKE COLUMN ──────────────────────────── */
+.strike {
+    background: linear-gradient(135deg, rgba(255,140,0,0.2), rgba(255,140,0,0.08)) !important;
+    color: var(--orange) !important;
+    font-weight: 700 !important;
+    font-size: 0.85rem !important;
+    border-left: 1px solid rgba(255,140,0,0.3) !important;
+    border-right: 1px solid rgba(255,140,0,0.3) !important;
+    letter-spacing: 0.3px;
+}
+
+/* ─── ATM ROW ────────────────────────────────── */
+tr.atm td {
+    background: rgba(255,214,0,0.06) !important;
+    border-top: 1px solid rgba(255,214,0,0.25) !important;
+    border-bottom: 1px solid rgba(255,214,0,0.25) !important;
+}
+tr.atm .strike {
+    background: linear-gradient(135deg, rgba(255,214,0,0.3), rgba(255,140,0,0.15)) !important;
+    color: #ffd400 !important;
+    border-left: 2px solid rgba(255,214,0,0.6) !important;
+    border-right: 2px solid rgba(255,214,0,0.6) !important;
+    box-shadow: 0 0 20px rgba(255,214,0,0.15);
+    animation: atm-glow 2.5s ease-in-out infinite;
+}
+
+@keyframes atm-glow {
+    0%, 100% { box-shadow: 0 0 10px rgba(255,214,0,0.15); }
+    50% { box-shadow: 0 0 25px rgba(255,214,0,0.35); }
+}
+
+/* ─── RESISTANCE / SUPPORT ───────────────────── */
 .resistance {
-    background-color: #ff1a1a !important;
-    color: white !important;
-    font-weight: 800;
-    box-shadow: 0 0 15px rgba(255,26,26,0.3);
+    background: linear-gradient(135deg, rgba(255,61,87,0.3), rgba(255,61,87,0.1)) !important;
+    color: #ff6b7a !important;
+    font-weight: 700 !important;
 }
 
 .support {
-    background-color: #00cc66 !important;
-    color: white !important;
-    font-weight: 800;
-    box-shadow: 0 0 15px rgba(0,204,102,0.3);
+    background: linear-gradient(135deg, rgba(0,230,118,0.3), rgba(0,230,118,0.1)) !important;
+    color: #4dffab !important;
+    font-weight: 700 !important;
 }
 
-/* METRIC HIGHLIGHTS */
-.ce-high {
-    background-color: #00ff88 !important;
-    color: black !important;
-    box-shadow: 0 0 15px rgba(0,255,136,0.3);
+/* ─── LTP COLORS ─────────────────────────────── */
+.ltp-ce { color: var(--green) !important; font-weight: 700 !important; }
+.ltp-pe { color: var(--red)   !important; font-weight: 700 !important; }
+
+/* ─── ΔOI ARROWS ─────────────────────────────── */
+.oi-up   { color: var(--green); }
+.oi-down { color: var(--red); }
+.oi-flat { color: var(--text-muted); }
+
+/* ─── FLASH ANIMATION ────────────────────────── */
+@keyframes flash-green {
+    0%   { background-color: rgba(0,230,118,0.35); }
+    100% { background-color: transparent; }
+}
+@keyframes flash-red {
+    0%   { background-color: rgba(255,61,87,0.35); }
+    100% { background-color: transparent; }
+}
+.flash-up   { animation: flash-green 0.6s ease-out; }
+.flash-down { animation: flash-red   0.6s ease-out; }
+
+/* ─── MOBILE ─────────────────────────────────── */
+@media (max-width: 768px) {
+    .header { padding: 12px 16px; }
+    .banner { padding: 12px 16px; gap: 8px; grid-template-columns: repeat(2, 1fr); }
+    .table-wrapper { margin: 0 8px; border-radius: 10px; }
+    .banner-value { font-size: 1.1rem; }
+    td, th { padding: 7px 5px; font-size: 0.75rem; }
 }
 
-.pe-high {
-    background-color: #ff4d4d !important;
-    color: white !important;
-    box-shadow: 0 0 15px rgba(255,77,77,0.3);
-}
-
-/* HOVER (Smooth glass hover) */
-tr:hover td {
-    background-color: rgba(255,255,255,0.05);
-    transition: background-color 0.2s ease;
+@media (max-width: 480px) {
+    .header-subtitle { display: none; }
+    .banner { grid-template-columns: repeat(2, 1fr); }
+    .banner-card.time { display: none; }
 }
 </style>
 </head>
-
 <body>
 
-<h1>UPDATED UI LIVE</h1>
-<h2 style="text-align:center;">Option Chain Dashboard</h2>
+<!-- ─── HEADER ─────────────────────────────────── -->
+<header class="header">
+    <div class="header-brand">
+        <div class="header-logo">N</div>
+        <div>
+            <div class="header-title">NIFTY Option Chain</div>
+            <div class="header-subtitle">Live Delta Streaming Dashboard</div>
+        </div>
+    </div>
 
-<div class="auth-notice" id="authWarning" style="display: none;">
-    Engine Status: <strong style="color:red">Idle/Unauthorized</strong>. -> <a href="/auth">Click Here to Authenticate / Login</a>
+    <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+        <div class="ws-status offline" id="wsStatusPill">
+            <div class="ws-dot"></div>
+            <span id="wsStatusText">Connecting…</span>
+        </div>
+        <a href="/auth" class="header-auth-link" id="authLink">⚙ Auth</a>
+    </div>
+</header>
+
+<!-- ─── AUTH WARNING ───────────────────────────── -->
+<div class="auth-notice" id="authWarning">
+    ⚠ Engine is <strong>Idle / Unauthorized</strong>. &nbsp;
+    <a href="/auth">Click here to authenticate →</a>
 </div>
 
+<!-- ─── BANNER ─────────────────────────────────── -->
+<div class="banner">
+    <div class="banner-card spot">
+        <div class="banner-label">NIFTY Spot</div>
+        <div class="banner-value" id="spotPrice">——</div>
+    </div>
+    <div class="banner-card expiry">
+        <div class="banner-label">Expiry</div>
+        <div class="banner-value" id="expiryDate">——</div>
+    </div>
+    <div class="banner-card pcr" id="pcrCard">
+        <div class="banner-label">PCR (OI)</div>
+        <div class="banner-value" id="pcrValue">——</div>
+    </div>
+    <div class="banner-card time">
+        <div class="banner-label">Last Update</div>
+        <div class="banner-value" id="lastUpdated">——:——:——</div>
+    </div>
+</div>
+
+<!-- ─── TABLE ─────────────────────────────────── -->
 <div class="table-wrapper">
     <table id="optionTable">
         <thead>
             <tr>
-                <th colspan="3">CALLS (CE)</th>
-                <th>STRIKE</th>
-                <th colspan="3">PUTS (PE)</th>
+                <th colspan="4">▲ CALLS (CE)</th>
+                <th rowspan="2" class="center-head" style="vertical-align:middle;">STRIKE</th>
+                <th colspan="4">▼ PUTS (PE)</th>
             </tr>
             <tr>
                 <th>OI</th>
                 <th>ΔOI</th>
                 <th>Volume</th>
-                <th>Price</th>
+                <th>LTP</th>
+                <th>LTP</th>
                 <th>Volume</th>
                 <th>ΔOI</th>
                 <th>OI</th>
@@ -168,96 +428,352 @@ tr:hover td {
 </div>
 
 <script>
-console.log("UPDATED UI LOADED"); // Force logging
+// ────────────────────────────────────────────────
+// STATE
+// ────────────────────────────────────────────────
+let lastTimestamp  = null;
+let retryCount     = 0;
+let updateInterval = null;
+let ws             = null;
+let isWsConnected  = false;
+let expectedSeqId  = null;
 
-async function loadData() {
-    try {
-        const res = await fetch('/api/option-chain?symbol=NIFTY'); // Swapped mapping backend natively
-        if (res.status === 401) {
-            window.location.href = '/auth'; // Redirect cleanly
-            return;
+// Previous OI values for flash direction detection
+const prevOiMap = {};
+
+// ────────────────────────────────────────────────
+// WS STATUS PILL
+// ────────────────────────────────────────────────
+function setWsStatus(mode) {
+    const pill = document.getElementById('wsStatusPill');
+    const text = document.getElementById('wsStatusText');
+    pill.className = 'ws-status ' + mode;
+    if (mode === 'live')    text.textContent = '🟢 Live Stream';
+    if (mode === 'polling') text.textContent = '🟡 REST Polling';
+    if (mode === 'offline') text.textContent = '🔴 Reconnecting…';
+}
+
+// ────────────────────────────────────────────────
+// PCR CALCULATOR
+// ────────────────────────────────────────────────
+function updatePCR(data) {
+    let totalCE_OI = 0, totalPE_OI = 0;
+    data.forEach(row => {
+        if (row.CE && row.CE.oi) totalCE_OI += row.CE.oi;
+        if (row.PE && row.PE.oi) totalPE_OI += row.PE.oi;
+    });
+    const card = document.getElementById('pcrCard');
+    const el   = document.getElementById('pcrValue');
+    if (totalCE_OI === 0) { el.textContent = '——'; return; }
+    const pcr = (totalPE_OI / totalCE_OI).toFixed(2);
+    el.textContent = pcr;
+    card.classList.remove('bullish', 'bearish');
+    if (pcr > 1.2)      card.classList.add('bullish');
+    else if (pcr < 0.8) card.classList.add('bearish');
+}
+
+// ────────────────────────────────────────────────
+// WS ENGINE
+// ────────────────────────────────────────────────
+function connectWebSocket() {
+    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(`${protocol}//${location.host}/ws/option-chain`);
+
+    ws.onopen = () => {
+        console.log('🟢 WebSocket Connected');
+        isWsConnected = true;
+        setWsStatus('live');
+        document.getElementById('authWarning').style.display = 'none';
+        if (updateInterval) { clearInterval(updateInterval); updateInterval = null; }
+    };
+
+    ws.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+
+        if (msg.spot_price) document.getElementById('spotPrice').textContent = Number(msg.spot_price).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        if (msg.expiry)     document.getElementById('expiryDate').textContent = msg.expiry;
+        if (msg.timestamp)  document.getElementById('lastUpdated').textContent = msg.timestamp;
+
+        if (msg.type === 'FULL') {
+            expectedSeqId = (msg.seq_id || 0) + 1;
+            updateTable(msg.chain, msg.atm_strike);
+            updatePCR(msg.chain);
+            lastTimestamp = msg.timestamp;
+            document.getElementById('authWarning').style.display = 'none';
         }
+        else if (msg.type === 'DELTA') {
+            const targetSeq = msg.seq_id;
+            if (expectedSeqId !== null && targetSeq !== expectedSeqId) {
+                console.warn(`[DESYNC] expected ${expectedSeqId} got ${targetSeq} — syncing`);
+                ws.send('REQUEST_SYNC');
+                return;
+            }
+            expectedSeqId = targetSeq + 1;
+            if (!msg.chain_updates) return;
+
+            Object.keys(msg.chain_updates).forEach(strike => {
+                const ch = msg.chain_updates[strike];
+                patchDeltaRow(strike, ch.CE, ch.PE);
+            });
+            lastTimestamp = msg.timestamp;
+            if (msg.atm_strike) enforceAtmStyling(msg.atm_strike);
+        }
+    };
+
+    ws.onclose = () => {
+        if (isWsConnected) console.log('🔴 WebSocket dropped — falling back to REST');
+        isWsConnected = false;
+        setWsStatus('offline');
+        setTimeout(connectWebSocket, 3000);
+        if (!updateInterval) {
+            setWsStatus('polling');
+            updateInterval = setInterval(loadDataREST, 5000);
+        }
+    };
+
+    ws.onerror = () => ws.close();
+}
+
+// ────────────────────────────────────────────────
+// REST FALLBACK
+// ────────────────────────────────────────────────
+async function loadDataREST() {
+    if (isWsConnected) return;
+    try {
+        const res = await fetch('/api/option-chain?symbol=NIFTY');
+        if (res.status === 401) { location.href = '/auth'; return; }
+        if (!res.ok) throw new Error('Network Error');
 
         const json = await res.json();
-        
         if (!json.success) {
-            document.getElementById("authWarning").style.display = 'block';
+            document.getElementById('authWarning').style.display = 'block';
             return;
         }
-        document.getElementById("authWarning").style.display = 'none';
+        document.getElementById('authWarning').style.display = 'none';
+        retryCount = 0;
 
-        const data = json.chain;
-        const atm = json.atm_strike;
+        if (lastTimestamp === json.timestamp && json.timestamp) return;
+        lastTimestamp = json.timestamp;
 
-        const table = document.querySelector("#optionTable tbody");
-        table.innerHTML = "";
+        document.getElementById('spotPrice').textContent  = Number(json.spot_price || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        document.getElementById('expiryDate').textContent = json.expiry   || '——';
+        document.getElementById('lastUpdated').textContent= json.timestamp|| '——';
 
-        // Properly map Python dict values cleanly handling `undefined` bounds
-        let maxCE = Math.max(...data.map(d => d.CE && d.CE.oi != null ? d.CE.oi : -Infinity));
-        let maxPE = Math.max(...data.map(d => d.PE && d.PE.oi != null ? d.PE.oi : -Infinity));
-
-        data.forEach(row => {
-            const tr = document.createElement("tr");
-
-            // ATM row check (Ensure numeric casting securely)
-            const isAtm = Number(row.strike) === Number(atm);
-            if (isAtm) {
-                tr.classList.add("atm");
-            }
-
-            // ITM / OTM logic
-            let ceClass = "";
-            let peClass = "";
-
-            if (Number(row.strike) < Number(atm)) ceClass = "itm";
-            else if (Number(row.strike) > Number(atm)) ceClass = "otm";
-
-            if (Number(row.strike) > Number(atm)) peClass = "itm";
-            else if (Number(row.strike) < Number(atm)) peClass = "otm";
-
-            // Extractor formatting mapping natively
-            const ce_oi = row.CE ? row.CE.oi : 0;
-            const ce_oi_chg = row.CE ? row.CE.intraday_oi_change : 0;
-            const ce_vol = row.CE ? row.CE.volume : 0;
-            const ce_price = row.CE ? row.CE.ltp : 0;
-
-            const pe_oi = row.PE ? row.PE.oi : 0;
-            const pe_oi_chg = row.PE ? row.PE.intraday_oi_change : 0;
-            const pe_vol = row.PE ? row.PE.volume : 0;
-            const pe_price = row.PE ? row.PE.ltp : 0;
-
-            const fmt = (n) => n != null ? n.toLocaleString('en-IN') : '—';
-            
-            // Build Row HTML securely merging classes directly onto elements
-            // We append ATM overrides dynamically via explicit CSS properties on td logic
-            // Note: The prompt explicitly asked to map Resistance and Support logic dynamically
-
-            tr.innerHTML = `
-                <td class="${ce_oi === maxCE && maxCE > -Infinity && !isAtm ? 'resistance ce-high' : isAtm ? '' : ceClass}">
-                    ${fmt(ce_oi)}
-                </td>
-                <td class="${ceClass}">${fmt(ce_oi_chg)}</td>
-                <td class="${ceClass}">${fmt(ce_vol)}</td>
-
-                <td class="strike">${fmt(row.strike)}</td>
-
-                <td class="${peClass}">${fmt(pe_vol)}</td>
-                <td class="${peClass}">${fmt(pe_oi_chg)}</td>
-                <td class="${pe_oi === maxPE && maxPE > -Infinity && !isAtm ? 'support pe-high' : isAtm ? '' : peClass}">
-                    ${fmt(pe_oi)}
-                </td>
-            `;
-
-            table.appendChild(tr);
-        });
+        updateTable(json.chain, json.atm_strike);
+        updatePCR(json.chain);
     } catch (err) {
-        console.error("Fetch Data Error:", err);
+        console.error('REST fetch error:', err);
+        retryCount++;
+        setTimeout(loadDataREST, Math.min(retryCount * 2000, 10000));
     }
 }
 
-setInterval(loadData, 5000);
-loadData();
-</script>
+// ────────────────────────────────────────────────
+// HELPERS
+// ────────────────────────────────────────────────
+const fmt = n => (n != null && n !== undefined)
+    ? Number(n).toLocaleString('en-IN')
+    : '—';
 
+function fmtOI(val, prevVal, tdEl) {
+    if (val == null) return { text: '—', cls: '' };
+    const text = fmt(val);
+    let cls = 'oi-flat';
+    if (prevVal != null) {
+        if (val > prevVal) cls = 'oi-up';
+        if (val < prevVal) cls = 'oi-down';
+    }
+    return { text, cls };
+}
+
+function fmtDeltaOI(val) {
+    if (val == null) return { text: '—', cls: '' };
+    const abs  = fmt(Math.abs(val));
+    if (val > 0) return { text: '▲ ' + abs, cls: 'oi-up' };
+    if (val < 0) return { text: '▼ ' + abs, cls: 'oi-down' };
+    return { text: '— ' + abs, cls: 'oi-flat' };
+}
+
+function flashCell(td, direction) {
+    td.classList.remove('flash-up', 'flash-down');
+    void td.offsetWidth; // reflow
+    td.classList.add(direction === 'up' ? 'flash-up' : 'flash-down');
+}
+
+// ────────────────────────────────────────────────
+// DELTA PATCH (no full reflow)
+// ────────────────────────────────────────────────
+function patchDeltaRow(strike, ceData, peData) {
+    const tbody = document.querySelector('#optionTable tbody');
+    const tr    = tbody.querySelector(`tr[data-strike='${strike}']`);
+    if (!tr) return;
+
+    const tds = tr.querySelectorAll('td');
+    const key  = strike;
+
+    const setCell = (idx, text, extraCls, flashDir) => {
+        const td = tds[idx];
+        if (!td) return;
+        if (td.textContent !== text) {
+            td.textContent = text;
+            if (extraCls !== undefined) td.className = extraCls;
+            if (flashDir) flashCell(td, flashDir);
+        }
+    };
+
+    if (ceData) {
+        const prevOI = prevOiMap[key + '_CE'];
+        if (ceData.oi != null) {
+            const { text, cls } = fmtOI(ceData.oi, prevOI);
+            setCell(0, text, cls, ceData.oi > prevOI ? 'up' : ceData.oi < prevOI ? 'down' : null);
+            prevOiMap[key + '_CE'] = ceData.oi;
+        }
+        if (ceData.intraday_oi_change !== undefined) {
+            const { text, cls } = fmtDeltaOI(ceData.intraday_oi_change);
+            setCell(1, text, cls);
+        }
+        if (ceData.volume != null) setCell(2, fmt(ceData.volume));
+        if (ceData.ltp    != null) {
+            const prevLtp = prevOiMap[key + '_CE_ltp'];
+            setCell(3, fmt(ceData.ltp), 'ltp-ce', ceData.ltp > prevLtp ? 'up' : ceData.ltp < prevLtp ? 'down' : null);
+            prevOiMap[key + '_CE_ltp'] = ceData.ltp;
+        }
+    }
+
+    if (peData) {
+        const prevOI = prevOiMap[key + '_PE'];
+        if (peData.ltp != null) {
+            const prevLtp = prevOiMap[key + '_PE_ltp'];
+            setCell(5, fmt(peData.ltp), 'ltp-pe', peData.ltp > prevLtp ? 'up' : peData.ltp < prevLtp ? 'down' : null);
+            prevOiMap[key + '_PE_ltp'] = peData.ltp;
+        }
+        if (peData.volume != null) setCell(6, fmt(peData.volume));
+        if (peData.intraday_oi_change !== undefined) {
+            const { text, cls } = fmtDeltaOI(peData.intraday_oi_change);
+            setCell(7, text, cls);
+        }
+        if (peData.oi != null) {
+            const { text, cls } = fmtOI(peData.oi, prevOI);
+            setCell(8, text, cls, peData.oi > prevOI ? 'up' : peData.oi < prevOI ? 'down' : null);
+            prevOiMap[key + '_PE'] = peData.oi;
+        }
+    }
+}
+
+// ────────────────────────────────────────────────
+// ATM STYLING
+// ────────────────────────────────────────────────
+function enforceAtmStyling(atm) {
+    document.querySelectorAll('#optionTable tbody tr').forEach(tr => {
+        const s = Number(tr.getAttribute('data-strike'));
+        if (s === Number(atm))   { if (!tr.classList.contains('atm')) tr.classList.add('atm'); }
+        else if (tr.classList.contains('atm')) tr.classList.remove('atm');
+    });
+}
+
+// ────────────────────────────────────────────────
+// FULL TABLE HYDRATION
+// ────────────────────────────────────────────────
+function updateTable(data, atm) {
+    const tbody = document.querySelector('#optionTable tbody');
+
+    let maxCE_OI = -Infinity, maxPE_OI = -Infinity;
+    data.forEach(d => {
+        if (d.CE?.oi != null && d.CE.oi > maxCE_OI) maxCE_OI = d.CE.oi;
+        if (d.PE?.oi != null && d.PE.oi > maxPE_OI) maxPE_OI = d.PE.oi;
+    });
+
+    const currentStrikes = new Set();
+
+    data.forEach(row => {
+        const strike = row.strike;
+        currentStrikes.add(String(strike));
+
+        let tr = tbody.querySelector(`tr[data-strike='${strike}']`);
+        if (!tr) {
+            tr = document.createElement('tr');
+            tr.setAttribute('data-strike', strike);
+            for (let i = 0; i < 9; i++) tr.appendChild(document.createElement('td'));
+            tbody.appendChild(tr);
+        }
+
+        const isAtm = Number(strike) === Number(atm);
+        tr.classList.toggle('atm', isAtm);
+
+        const tds = tr.querySelectorAll('td');
+
+        const ceOTM = Number(strike) > Number(atm);
+        const ceITM = Number(strike) < Number(atm);
+        const peOTM = Number(strike) < Number(atm);
+        const peITM = Number(strike) > Number(atm);
+
+        const ce_oi      = row.CE?.oi ?? null;
+        const ce_dOI     = row.CE?.intraday_oi_change ?? null;
+        const ce_vol     = row.CE?.volume ?? null;
+        const ce_ltp     = row.CE?.ltp ?? null;
+        const pe_ltp     = row.PE?.ltp ?? null;
+        const pe_vol     = row.PE?.volume ?? null;
+        const pe_dOI     = row.PE?.intraday_oi_change ?? null;
+        const pe_oi      = row.PE?.oi ?? null;
+
+        // Store prev for future delta flashes
+        const key = String(strike);
+        prevOiMap[key + '_CE']     = ce_oi;
+        prevOiMap[key + '_PE']     = pe_oi;
+        prevOiMap[key + '_CE_ltp'] = ce_ltp;
+        prevOiMap[key + '_PE_ltp'] = pe_ltp;
+
+        // ── CE OI (col 0)
+        const isMaxCE = ce_oi === maxCE_OI && !isAtm;
+        tds[0].textContent = fmt(ce_oi);
+        tds[0].className   = isMaxCE ? 'resistance' : isAtm ? '' : ceITM ? 'itm' : 'otm';
+
+        // ── CE ΔOI (col 1)
+        const { text: t1, cls: c1 } = fmtDeltaOI(ce_dOI);
+        tds[1].textContent = t1; tds[1].className = c1 + (ceITM ? ' itm' : ' otm');
+
+        // ── CE Vol (col 2)
+        tds[2].textContent = fmt(ce_vol);
+        tds[2].className   = isAtm ? '' : ceITM ? 'itm' : 'otm';
+
+        // ── CE LTP (col 3)
+        tds[3].textContent = fmt(ce_ltp);
+        tds[3].className   = 'ltp-ce';
+
+        // ── STRIKE (col 4)
+        tds[4].textContent = fmt(strike);
+        tds[4].className   = 'strike';
+
+        // ── PE LTP (col 5)
+        tds[5].textContent = fmt(pe_ltp);
+        tds[5].className   = 'ltp-pe';
+
+        // ── PE Vol (col 6)
+        tds[6].textContent = fmt(pe_vol);
+        tds[6].className   = isAtm ? '' : peITM ? 'itm' : 'otm';
+
+        // ── PE ΔOI (col 7)
+        const { text: t7, cls: c7 } = fmtDeltaOI(pe_dOI);
+        tds[7].textContent = t7; tds[7].className = c7 + (peITM ? ' itm' : ' otm');
+
+        // ── PE OI (col 8)
+        const isMaxPE = pe_oi === maxPE_OI && !isAtm;
+        tds[8].textContent = fmt(pe_oi);
+        tds[8].className   = isMaxPE ? 'support' : isAtm ? '' : peITM ? 'itm' : 'otm';
+    });
+
+    // Remove stale rows
+    tbody.querySelectorAll('tr').forEach(tr => {
+        if (!currentStrikes.has(tr.getAttribute('data-strike'))) tr.remove();
+    });
+}
+
+// ────────────────────────────────────────────────
+// BOOT
+// ────────────────────────────────────────────────
+setWsStatus('offline');
+connectWebSocket();
+loadDataREST();
+</script>
 </body>
 </html>
