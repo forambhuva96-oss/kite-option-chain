@@ -1,4 +1,5 @@
 import asyncio
+import json
 import pandas as pd
 import pytz
 from datetime import datetime
@@ -22,24 +23,71 @@ STATE = {
     "last_updated": None
 }
 
+# ── Snapshot helpers ──────────────────────────────────────────
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SNAPSHOT_PATH = os.path.join(PROJECT_ROOT, "data", "closing_snapshot.json")
+
+def _save_closing_snapshot():
+    """Persist current STATE to disk so it survives restarts."""
+    try:
+        os.makedirs(os.path.dirname(SNAPSHOT_PATH), exist_ok=True)
+        payload = {
+            "latest_data":  STATE.get("latest_data", []),
+            "last_updated": STATE.get("last_updated"),
+            "spot_price":   STATE.get("spot_price", 0),
+            "atm_strike":   STATE.get("atm_strike", 0),
+            "expiry":       STATE.get("expiry", ""),
+            "all_expiries": STATE.get("all_expiries", []),
+            "saved_at":     datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
+        }
+        with open(SNAPSHOT_PATH, "w") as f:
+            json.dump(payload, f)
+    except Exception as e:
+        logger.warning(f"Snapshot save failed: {e}")
+
+def _load_closing_snapshot():
+    """Load the saved snapshot into STATE on startup."""
+    if not os.path.exists(SNAPSHOT_PATH):
+        return
+    try:
+        with open(SNAPSHOT_PATH, "r") as f:
+            data = json.load(f)
+        if data.get("latest_data"):
+            STATE["latest_data"]  = data["latest_data"]
+            STATE["last_updated"] = data.get("last_updated")
+            STATE["spot_price"]   = data.get("spot_price", 0)
+            STATE["atm_strike"]   = data.get("atm_strike", 0)
+            STATE["expiry"]       = data.get("expiry", "")
+            STATE["all_expiries"] = data.get("all_expiries", [])
+            STATE["snapshot_time"]= data.get("saved_at", "")
+            STATE["status"]       = "snapshot"   # special status for UI badge
+            logger.info(f"Closing snapshot loaded from {data.get('saved_at', 'disk')}")
+    except Exception as e:
+        logger.warning(f"Snapshot load failed: {e}")
+
+# Pre-load snapshot immediately so the dashboard shows data on first visit
+_load_closing_snapshot()
+
 # In-Memory Cache to eliminate SQLite I/O bottlenecks during live ticks
 EOD_CACHE = {}
 
 _active_task = None
 
 def get_latest_data() -> dict:
-    if STATE["status"] != "running" and not STATE["latest_data"]:
-        return {"error": f"System is inactive. Status: {STATE['status']}", "status": "error", "system_state": STATE["status"]}
-        
+    # Serve live OR snapshot data — never return empty
+    if not STATE["latest_data"]:
+        return {"error": f"No data yet. Status: {STATE['status']}", "status": "error", "system_state": STATE["status"]}
+
     return {
         "status": "success",
-        "timestamp": STATE["last_updated"],
-        "data": STATE["latest_data"],
-        "spot_price": STATE.get("spot_price", 0),
-        "atm_strike": STATE.get("atm_strike", 0),
-        "expiry": STATE.get("expiry", "Unknown"),
-        "all_expiries": STATE.get("all_expiries", []),
-        "system_state": STATE["status"]
+        "timestamp":     STATE["last_updated"],
+        "data":          STATE["latest_data"],
+        "spot_price":    STATE.get("spot_price", 0),
+        "atm_strike":    STATE.get("atm_strike", 0),
+        "expiry":        STATE.get("expiry", "Unknown"),
+        "all_expiries":  STATE.get("all_expiries", []),
+        "system_state":  STATE["status"],
+        "snapshot_time": STATE.get("snapshot_time")   # None when live
     }
 
 def get_system_status() -> dict:
@@ -305,6 +353,10 @@ async def _poll_option_chain(access_token: str):
             STATE["atm_strike"] = atm_strike
             STATE["expiry"] = expiry_str
             STATE["all_expiries"] = [{"label": e.strftime("%d %b %Y"), "value": e.strftime("%Y-%m-%d")} for e in expiries[:5]]
+            STATE.pop("snapshot_time", None)   # clear snapshot badge once live
+
+            # Persist closing snapshot on every successful cycle
+            _save_closing_snapshot()
 
             # Execute Local Engine Sync Calculation
             delta_chunk = _compute_delta(_last_full_state, STATE, master_seq_id)

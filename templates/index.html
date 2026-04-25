@@ -164,6 +164,21 @@ body {
 }
 .auth-notice a { color: var(--red); font-weight: 700; }
 
+/* ─── MARKET CLOSED BANNER ─────────────────── */
+.market-closed-notice {
+    display: none;
+    margin: 10px 24px;
+    padding: 10px 18px;
+    background: rgba(255,180,0,0.10);
+    border: 1px solid rgba(255,180,0,0.35);
+    border-radius: 10px;
+    font-size: 0.83rem;
+    color: #ffd166;
+    text-align: center;
+    letter-spacing: 0.3px;
+}
+.market-closed-notice strong { color: #ffe999; }
+
 /* ─── BANNER ─────────────────────────────────── */
 .banner {
     display: grid;
@@ -390,6 +405,11 @@ tr.atm td.pe-hl { color: #007a3d !important; }
     <a href="/auth">Click here to authenticate →</a>
 </div>
 
+<!-- ─── MARKET CLOSED BANNER ─────────────────── -->
+<div class="market-closed-notice" id="marketClosedBanner">
+    📄 <strong>Market Closed</strong> — Showing last closing data captured at <span id="snapshotTime"></span>
+</div>
+
 <!-- ─── BANNER ─────────────────────────────────── -->
 <div class="banner">
     <div class="banner-card spot">
@@ -507,6 +527,7 @@ function connectWebSocket() {
             updatePCR(msg.chain);
             lastTimestamp = msg.timestamp;
             document.getElementById('authWarning').style.display = 'none';
+            document.getElementById('marketClosedBanner').style.display = 'none'; // live = hide closed banner
         }
         else if (msg.type === 'DELTA') {
             const targetSeq = msg.seq_id;
@@ -557,6 +578,16 @@ async function loadDataREST() {
             return;
         }
         document.getElementById('authWarning').style.display = 'none';
+
+        // Market closed snapshot banner
+        const closedBanner = document.getElementById('marketClosedBanner');
+        if (json.snapshot_time) {
+            document.getElementById('snapshotTime').textContent = json.snapshot_time;
+            closedBanner.style.display = 'block';
+        } else {
+            closedBanner.style.display = 'none';
+        }
+
         retryCount = 0;
 
         if (lastTimestamp === json.timestamp && json.timestamp) return;
