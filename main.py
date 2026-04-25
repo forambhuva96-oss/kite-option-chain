@@ -23,6 +23,7 @@ logger = logging.getLogger("app")
 from services import kite_auth
 from services import background_task
 from services.nse_bhavcopy import nse_engine
+from services.nse_option_chain import fetch_nse_option_chain
 from utils import oi_tracker
 
 load_dotenv()
@@ -30,10 +31,10 @@ load_dotenv()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Server Started")
-    
+
     # 1. Initialize DB safely
     await asyncio.to_thread(oi_tracker.init_db)
-    
+
     # 2. Extract Official NSE Bhavcopy (non-blocking — 8s timeout)
     try:
         await asyncio.wait_for(
@@ -44,17 +45,56 @@ async def lifespan(app: FastAPI):
         logger.warning("NSE Bhavcopy fetch timed out — broker fallback will be used.")
     except Exception as e:
         logger.warning(f"NSE Bhavcopy fetch failed: {e} — continuing with broker fallback.")
-    
-    # 3. Spin up Edge Node Daemon (Redis Consumer Stream)
+
+    # 3. Fetch NSE Option Chain (public API — no Kite login required)
+    #    This populates the dashboard immediately even when market is closed.
+    try:
+        nse_data = await asyncio.wait_for(
+            asyncio.to_thread(fetch_nse_option_chain, "NIFTY"),
+            timeout=15.0
+        )
+        if nse_data and nse_data.get("latest_data"):
+            background_task.STATE.update(nse_data)
+            background_task.STATE["status"] = "snapshot"
+            background_task._save_closing_snapshot()
+            logger.info(f"NSE option chain loaded: spot={nse_data.get('spot_price')} expiry={nse_data.get('expiry')}")
+        else:
+            logger.warning("NSE option chain returned no data — falling back to saved snapshot.")
+    except asyncio.TimeoutError:
+        logger.warning("NSE option chain fetch timed out — using saved snapshot.")
+    except Exception as e:
+        logger.warning(f"NSE option chain fetch error: {e} — using saved snapshot.")
+
+    # 4. Spin up Edge Node Daemon (Redis Consumer Stream)
     asyncio.create_task(manager.start_redis_listener())
-    
-    # 4. Check Auto-Resume Capability
+
+    # 5. Auto-resume Kite polling if a valid token exists
     saved_token = kite_auth.load_saved_token()
     if saved_token:
-        logger.info("System Auto-Resumed")
+        logger.info("System Auto-Resumed with saved Kite token")
         background_task.start_polling(saved_token)
     else:
-        logger.info("[Lifespan] No active token found. Awaiting mobile login.")
+        logger.info("No Kite token found — showing NSE public data. Awaiting auth.")
+
+    # 6. Background NSE refresh every 5 min (keeps data fresh without Kite)
+    async def _nse_refresh_loop():
+        while True:
+            await asyncio.sleep(300)   # 5 minutes
+            if background_task.STATE.get("status") in ("idle", "snapshot", "login_required"):
+                try:
+                    nd = await asyncio.wait_for(
+                        asyncio.to_thread(fetch_nse_option_chain, "NIFTY"),
+                        timeout=15.0
+                    )
+                    if nd and nd.get("latest_data"):
+                        background_task.STATE.update(nd)
+                        background_task.STATE["status"] = "snapshot"
+                        background_task._save_closing_snapshot()
+                        logger.info("NSE option chain auto-refreshed")
+                except Exception as ex:
+                    logger.warning(f"NSE auto-refresh failed: {ex}")
+
+    asyncio.create_task(_nse_refresh_loop())
 
     yield
     logger.info("[Lifespan] Shutting down gracefully...")
