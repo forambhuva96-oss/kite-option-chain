@@ -216,11 +216,34 @@ body {
 }
 
 .banner-card.spot .banner-value { color: var(--green); }
-.banner-card.expiry .banner-value { color: var(--yellow); font-size: 1rem; }
 .banner-card.time .banner-value { color: var(--text-secondary); font-size: 1rem; }
 .banner-card.pcr .banner-value { color: var(--blue); }
 .banner-card.pcr.bullish .banner-value { color: var(--green); }
 .banner-card.pcr.bearish .banner-value { color: var(--red); }
+
+/* ─── EXPIRY SELECTOR ────────────────────────── */
+.banner-card.expiry { justify-content: center; }
+.expiry-select {
+    background: rgba(255,180,0,0.08);
+    border: 1px solid rgba(255,180,0,0.35);
+    color: #ffd166;
+    font-size: 0.92rem;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    padding: 6px 10px;
+    border-radius: 8px;
+    outline: none;
+    cursor: pointer;
+    width: 100%;
+    transition: border-color 0.2s, background 0.2s;
+    appearance: none;
+    -webkit-appearance: none;
+    text-align: center;
+    letter-spacing: 0.4px;
+}
+.expiry-select:hover  { border-color: rgba(255,180,0,0.7); background: rgba(255,180,0,0.13); }
+.expiry-select:focus  { border-color: #ffd166; }
+.expiry-select option { background: #0d1525; color: #f1f5f9; font-weight: 600; }
 
 /* ─── TABLE WRAPPER ──────────────────────────── */
 .table-wrapper {
@@ -418,7 +441,9 @@ tr.atm td.pe-hl { color: #007a3d !important; }
     </div>
     <div class="banner-card expiry">
         <div class="banner-label">Expiry</div>
-        <div class="banner-value" id="expiryDate">——</div>
+        <select class="expiry-select" id="expirySelect">
+            <option value="">——</option>
+        </select>
     </div>
     <div class="banner-card pcr" id="pcrCard">
         <div class="banner-label">PCR (OI)</div>
@@ -464,9 +489,40 @@ let updateInterval = null;
 let ws             = null;
 let isWsConnected  = false;
 let expectedSeqId  = null;
+let selectedExpiry = null;   // null = nearest (live)
+let allExpiries    = [];
 
 // Previous OI values for flash direction detection
 const prevOiMap = {};
+
+// ────────────────────────────────────────────────
+// EXPIRY SELECTOR
+// ────────────────────────────────────────────────
+function populateExpiries(expiries, activeExpiry) {
+    if (!expiries || !expiries.length) return;
+    const sel = document.getElementById('expirySelect');
+    const prev = sel.value;
+    sel.innerHTML = '';
+    expiries.forEach(e => {
+        const opt = document.createElement('option');
+        opt.value = e.value;
+        opt.textContent = e.label;
+        sel.appendChild(opt);
+    });
+    // Honour previous selection; else use activeExpiry from server
+    if (prev && expiries.find(e => e.value === prev)) {
+        sel.value = prev;
+    } else if (activeExpiry) {
+        sel.value = activeExpiry;
+        selectedExpiry = activeExpiry;
+    }
+    allExpiries = expiries;
+}
+
+document.getElementById('expirySelect').addEventListener('change', function() {
+    selectedExpiry = this.value;
+    loadDataREST(true);   // force-fetch for new expiry
+});
 
 // ────────────────────────────────────────────────
 // WS STATUS PILL
@@ -518,7 +574,7 @@ function connectWebSocket() {
         const msg = JSON.parse(event.data);
 
         if (msg.spot_price) document.getElementById('spotPrice').textContent = Number(msg.spot_price).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-        if (msg.expiry)     document.getElementById('expiryDate').textContent = msg.expiry;
+        if (msg.all_expiries) populateExpiries(msg.all_expiries, msg.expiry);
         if (msg.timestamp)  document.getElementById('lastUpdated').textContent = msg.timestamp;
 
         if (msg.type === 'FULL') {
@@ -565,10 +621,11 @@ function connectWebSocket() {
 // ────────────────────────────────────────────────
 // REST FALLBACK
 // ────────────────────────────────────────────────
-async function loadDataREST() {
-    if (isWsConnected) return;
+async function loadDataREST(forceRefresh = false) {
+    if (isWsConnected && !forceRefresh) return;
     try {
-        const res = await fetch('/api/option-chain?symbol=NIFTY');
+        const expParam = selectedExpiry ? `&expiry=${selectedExpiry}` : '';
+        const res = await fetch(`/api/option-chain?symbol=NIFTY${expParam}`);
         if (res.status === 401) { location.href = '/auth'; return; }
         if (!res.ok) throw new Error('Network Error');
 
@@ -590,12 +647,13 @@ async function loadDataREST() {
 
         retryCount = 0;
 
-        if (lastTimestamp === json.timestamp && json.timestamp) return;
+        if (!forceRefresh && lastTimestamp === json.timestamp && json.timestamp) return;
         lastTimestamp = json.timestamp;
 
-        document.getElementById('spotPrice').textContent  = Number(json.spot_price || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-        document.getElementById('expiryDate').textContent = json.expiry   || '——';
-        document.getElementById('lastUpdated').textContent= json.timestamp|| '——';
+        document.getElementById('spotPrice').textContent   = Number(json.spot_price || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        document.getElementById('lastUpdated').textContent = json.timestamp || '——';
+
+        if (json.all_expiries) populateExpiries(json.all_expiries, json.expiry);
 
         updateTable(json.chain, json.atm_strike);
         updatePCR(json.chain);
