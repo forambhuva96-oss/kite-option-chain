@@ -367,6 +367,18 @@ td.max-pe {
 tr.atm td.max-ce { background: rgba(185, 28, 28, 0.80) !important; color: #fff !important; }
 tr.atm td.max-pe { background: rgba(21, 128, 61, 0.80) !important; color: #fff !important; }
 
+/* --- 2ND HIGHEST — yellow for both CE and PE (ATM+OTM only) --- */
+td.max2-ce, td.max2-pe {
+    background: rgba(255, 214, 0, 0.28) !important;
+    color: #000000 !important;
+    font-weight: 700 !important;
+    box-shadow: inset 0 0 0 1px rgba(255,214,0,0.55);
+}
+tr.atm td.max2-ce, tr.atm td.max2-pe {
+    background: rgba(200, 160, 0, 0.55) !important;
+    color: #000000 !important;
+}
+
 
 /* ─── RESISTANCE / SUPPORT ───────────────────── */
 .resistance {
@@ -389,6 +401,19 @@ tr.atm td.max-pe { background: rgba(21, 128, 61, 0.80) !important; color: #fff !
 .oi-up   { color: var(--green); }
 .oi-down { color: var(--red); }
 .oi-flat { color: var(--text-muted); }
+
+/* ─── CONSISTENT CE/PE DATA COLORS ─────────────
+   OI, ΔOI, Volume → white text on all rows.
+   ATM row stays black (white bg → white text = invisible). */
+td.ce-data { color: #ffffff !important; }
+td.pe-data { color: #ffffff !important; }
+tr.atm td.ce-data { color: #000000 !important; }
+tr.atm td.pe-data { color: #000000 !important; }
+/* ΔOI flat stays muted */
+td.ce-data.oi-flat, td.pe-data.oi-flat { color: var(--text-muted) !important; }
+/* max highlights keep white text */
+td.ce-data.max-ce, tr.atm td.ce-data.max-ce { color: #ffffff !important; }
+td.pe-data.max-pe, tr.atm td.pe-data.max-pe { color: #ffffff !important; }
 
 /* ─── FLASH ANIMATION ────────────────────────── */
 @keyframes flash-green {
@@ -731,12 +756,16 @@ function patchDeltaRow(strike, ceData, peData) {
             td.textContent = text;
             if (extraCls !== undefined) {
                 const bases = [];
-                if (td.classList.contains('itm')) bases.push('itm');
-                if (td.classList.contains('otm')) bases.push('otm');
-                if (td.classList.contains('ce-hl')) bases.push('ce-hl');
-                if (td.classList.contains('pe-hl')) bases.push('pe-hl');
-                if (td.classList.contains('resistance')) bases.push('resistance');
-                if (td.classList.contains('support')) bases.push('support');
+                if (td.classList.contains('itm'))      bases.push('itm');
+                if (td.classList.contains('otm'))      bases.push('otm');
+                if (td.classList.contains('ce-hl'))    bases.push('ce-hl');
+                if (td.classList.contains('pe-hl'))    bases.push('pe-hl');
+                if (td.classList.contains('resistance'))bases.push('resistance');
+                if (td.classList.contains('support'))  bases.push('support');
+                if (td.classList.contains('ce-data'))  bases.push('ce-data');
+                if (td.classList.contains('pe-data'))  bases.push('pe-data');
+                if (td.classList.contains('max2-ce'))  bases.push('max2-ce');
+                if (td.classList.contains('max2-pe'))  bases.push('max2-pe');
                 td.className = (extraCls ? extraCls + ' ' : '') + bases.join(' ');
             }
             if (flashDir) flashCell(td, flashDir);
@@ -800,27 +829,33 @@ function updateTable(data, atm) {
     const tbody = document.querySelector('#optionTable tbody');
 
     // ───────────────────────────────────────────────
-    // PASS 1: compute max OI / Vol / |dOI| for ATM+OTM rows only
+    // PASS 1: collect values then find top-2 unique per metric
     // ───────────────────────────────────────────────
-    let maxCE_OI  = -Infinity, maxPE_OI  = -Infinity;
-    let maxCE_Vol = -Infinity, maxPE_Vol = -Infinity;
-    let maxCE_dOI = -Infinity, maxPE_dOI = -Infinity; // stores ABSOLUTE value
+    const _ceOI = [], _peOI = [], _ceVol = [], _peVol = [], _cedOI = [], _pedOI = [];
     data.forEach(d => {
         const s = Number(d.strike);
         const isA   = s === Number(atm);
         const ceOTM = s > Number(atm);
         const peOTM = s < Number(atm);
         if (isA || ceOTM) {
-            if (d.CE?.oi     != null && d.CE.oi > maxCE_OI)  maxCE_OI  = d.CE.oi;
-            if (d.CE?.volume != null && d.CE.volume > maxCE_Vol) maxCE_Vol = d.CE.volume;
-            if (d.CE?.intraday_oi_change != null && Math.abs(d.CE.intraday_oi_change) > maxCE_dOI) maxCE_dOI = Math.abs(d.CE.intraday_oi_change);
+            if (d.CE?.oi != null)                  _ceOI.push(d.CE.oi);
+            if (d.CE?.volume != null)               _ceVol.push(d.CE.volume);
+            if (d.CE?.intraday_oi_change != null)   _cedOI.push(Math.abs(d.CE.intraday_oi_change));
         }
         if (isA || peOTM) {
-            if (d.PE?.oi     != null && d.PE.oi > maxPE_OI)  maxPE_OI  = d.PE.oi;
-            if (d.PE?.volume != null && d.PE.volume > maxPE_Vol) maxPE_Vol = d.PE.volume;
-            if (d.PE?.intraday_oi_change != null && Math.abs(d.PE.intraday_oi_change) > maxPE_dOI) maxPE_dOI = Math.abs(d.PE.intraday_oi_change);
+            if (d.PE?.oi != null)                  _peOI.push(d.PE.oi);
+            if (d.PE?.volume != null)               _peVol.push(d.PE.volume);
+            if (d.PE?.intraday_oi_change != null)   _pedOI.push(Math.abs(d.PE.intraday_oi_change));
         }
     });
+    // Returns [1st, 2nd] unique max values
+    const top2 = arr => { const s = [...new Set(arr)].sort((a,b)=>b-a); return [s[0]??-Infinity, s[1]??-Infinity]; };
+    const [maxCE_OI,  max2CE_OI]  = top2(_ceOI);
+    const [maxPE_OI,  max2PE_OI]  = top2(_peOI);
+    const [maxCE_Vol, max2CE_Vol] = top2(_ceVol);
+    const [maxPE_Vol, max2PE_Vol] = top2(_peVol);
+    const [maxCE_dOI, max2CE_dOI] = top2(_cedOI);
+    const [maxPE_dOI, max2PE_dOI] = top2(_pedOI);
 
     const currentStrikes = new Set();
 
@@ -863,24 +898,27 @@ function updateTable(data, atm) {
         prevOiMap[key + '_PE_ltp'] = pe_ltp;
 
         // ── CE OI (col 0)
-        const isCeOI_max  = (isAtm || ceOTM) && ce_oi === maxCE_OI && maxCE_OI > 0;
+        const isCeOI_max  = (isAtm || ceOTM) && ce_oi === maxCE_OI  && maxCE_OI  > 0;
+        const isCeOI_max2 = (isAtm || ceOTM) && ce_oi === max2CE_OI && max2CE_OI > 0 && !isCeOI_max;
         tds[0].textContent = fmt(ce_oi);
-        let c0 = isAtm ? '' : ceITM ? 'itm' : 'otm';
-        c0 += isCeOI_max ? ' max-ce' : (isAtm || ceOTM) ? ' ce-hl' : '';
+        let c0 = 'ce-data' + (isAtm ? '' : ceITM ? ' itm' : ' otm');
+        c0 += isCeOI_max ? ' max-ce' : isCeOI_max2 ? ' max2-ce' : (isAtm || ceOTM) ? ' ce-hl' : '';
         tds[0].className = c0;
 
         // ── CE ΔOI (col 1)
         const { text: t1, cls: c1 } = fmtDeltaOI(ce_dOI);
-        const isCedOI_max = (isAtm || ceOTM) && ce_dOI != null && Math.abs(ce_dOI) === maxCE_dOI && maxCE_dOI > 0;
-        let c1_full = c1 + (ceITM ? ' itm' : ' otm');
-        c1_full += isCedOI_max ? ' max-ce' : (isAtm || ceOTM) ? ' ce-hl' : '';
+        const isCedOI_max  = (isAtm || ceOTM) && ce_dOI != null && Math.abs(ce_dOI) === maxCE_dOI  && maxCE_dOI  > 0;
+        const isCedOI_max2 = (isAtm || ceOTM) && ce_dOI != null && Math.abs(ce_dOI) === max2CE_dOI && max2CE_dOI > 0 && !isCedOI_max;
+        let c1_full = 'ce-data ' + c1 + (isAtm ? '' : ceITM ? ' itm' : ' otm');
+        c1_full += isCedOI_max ? ' max-ce' : isCedOI_max2 ? ' max2-ce' : (isAtm || ceOTM) ? ' ce-hl' : '';
         tds[1].textContent = t1; tds[1].className = c1_full;
 
         // ── CE Vol (col 2)
-        const isCeVol_max = (isAtm || ceOTM) && ce_vol === maxCE_Vol && maxCE_Vol > 0;
+        const isCeVol_max  = (isAtm || ceOTM) && ce_vol === maxCE_Vol  && maxCE_Vol  > 0;
+        const isCeVol_max2 = (isAtm || ceOTM) && ce_vol === max2CE_Vol && max2CE_Vol > 0 && !isCeVol_max;
         tds[2].textContent = fmt(ce_vol);
-        let c2 = isAtm ? '' : ceITM ? 'itm' : 'otm';
-        c2 += isCeVol_max ? ' max-ce' : (isAtm || ceOTM) ? ' ce-hl' : '';
+        let c2 = 'ce-data' + (isAtm ? '' : ceITM ? ' itm' : ' otm');
+        c2 += isCeVol_max ? ' max-ce' : isCeVol_max2 ? ' max2-ce' : (isAtm || ceOTM) ? ' ce-hl' : '';
         tds[2].className = c2;
 
         // ── CE LTP (col 3)
@@ -896,24 +934,27 @@ function updateTable(data, atm) {
         tds[5].className   = 'ltp-pe';
 
         // ── PE Vol (col 6)
-        const isPeVol_max = (isAtm || peOTM) && pe_vol === maxPE_Vol && maxPE_Vol > 0;
+        const isPeVol_max  = (isAtm || peOTM) && pe_vol === maxPE_Vol  && maxPE_Vol  > 0;
+        const isPeVol_max2 = (isAtm || peOTM) && pe_vol === max2PE_Vol && max2PE_Vol > 0 && !isPeVol_max;
         tds[6].textContent = fmt(pe_vol);
-        let c6 = isAtm ? '' : peITM ? 'itm' : 'otm';
-        c6 += isPeVol_max ? ' max-pe' : (isAtm || peOTM) ? ' pe-hl' : '';
+        let c6 = 'pe-data' + (isAtm ? '' : peITM ? ' itm' : ' otm');
+        c6 += isPeVol_max ? ' max-pe' : isPeVol_max2 ? ' max2-pe' : (isAtm || peOTM) ? ' pe-hl' : '';
         tds[6].className = c6;
 
         // ── PE ΔOI (col 7)
         const { text: t7, cls: c7 } = fmtDeltaOI(pe_dOI);
-        const isPedOI_max = (isAtm || peOTM) && pe_dOI != null && Math.abs(pe_dOI) === maxPE_dOI && maxPE_dOI > 0;
-        let c7_full = c7 + (peITM ? ' itm' : ' otm');
-        c7_full += isPedOI_max ? ' max-pe' : (isAtm || peOTM) ? ' pe-hl' : '';
+        const isPedOI_max  = (isAtm || peOTM) && pe_dOI != null && Math.abs(pe_dOI) === maxPE_dOI  && maxPE_dOI  > 0;
+        const isPedOI_max2 = (isAtm || peOTM) && pe_dOI != null && Math.abs(pe_dOI) === max2PE_dOI && max2PE_dOI > 0 && !isPedOI_max;
+        let c7_full = 'pe-data ' + c7 + (isAtm ? '' : peITM ? ' itm' : ' otm');
+        c7_full += isPedOI_max ? ' max-pe' : isPedOI_max2 ? ' max2-pe' : (isAtm || peOTM) ? ' pe-hl' : '';
         tds[7].textContent = t7; tds[7].className = c7_full;
 
         // ── PE OI (col 8)
-        const isPeOI_max = (isAtm || peOTM) && pe_oi === maxPE_OI && maxPE_OI > 0;
+        const isPeOI_max  = (isAtm || peOTM) && pe_oi === maxPE_OI  && maxPE_OI  > 0;
+        const isPeOI_max2 = (isAtm || peOTM) && pe_oi === max2PE_OI && max2PE_OI > 0 && !isPeOI_max;
         tds[8].textContent = fmt(pe_oi);
-        let c8 = isAtm ? '' : peITM ? 'itm' : 'otm';
-        c8 += isPeOI_max ? ' max-pe' : (isAtm || peOTM) ? ' pe-hl' : '';
+        let c8 = 'pe-data' + (isAtm ? '' : peITM ? ' itm' : ' otm');
+        c8 += isPeOI_max ? ' max-pe' : isPeOI_max2 ? ' max2-pe' : (isAtm || peOTM) ? ' pe-hl' : '';
         tds[8].className = c8;
     });
 
